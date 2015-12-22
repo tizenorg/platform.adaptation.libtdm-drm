@@ -40,6 +40,7 @@ static tdm_func_display drm_func_display =
     drm_layer_get_info,
     drm_layer_set_buffer,
     drm_layer_unset_buffer,
+    NULL,    //layer_set_video_pos
     NULL,    //layer_create_capture
 };
 
