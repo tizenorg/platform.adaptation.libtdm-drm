@@ -44,7 +44,7 @@ tdm_error    drm_layer_set_property(tdm_layer *layer, unsigned int id, tdm_value
 tdm_error    drm_layer_get_property(tdm_layer *layer, unsigned int id, tdm_value *value);
 tdm_error    drm_layer_set_info(tdm_layer *layer, tdm_info_layer *info);
 tdm_error    drm_layer_get_info(tdm_layer *layer, tdm_info_layer *info);
-tdm_error    drm_layer_set_buffer(tdm_layer *layer, tdm_buffer *buffer);
+tdm_error    drm_layer_set_buffer(tdm_layer *layer, tbm_surface_h buffer);
 tdm_error    drm_layer_unset_buffer(tdm_layer *layer);
 
 /* drm module internal macros, structures, functions */
