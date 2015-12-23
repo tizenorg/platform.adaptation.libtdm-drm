@@ -119,7 +119,7 @@ _tdm_drm_display_get_mode(tdm_drm_output_data *output_data)
 static tdm_drm_display_buffer*
 _tdm_drm_display_find_buffer(tdm_drm_data *drm_data, tbm_surface_h buffer)
 {
-    tdm_drm_display_buffer *display_buffer;
+    tdm_drm_display_buffer *display_buffer = NULL;
 
     LIST_FOR_EACH_ENTRY(display_buffer, &drm_data->buffer_list, link)
     {
@@ -416,7 +416,7 @@ _tdm_drm_display_create_layer_list(tdm_drm_data *drm_data)
 
     for (i = 0; i < drm_data->plane_res->count_planes; i++)
     {
-        tdm_drm_output_data *output_data;
+        tdm_drm_output_data *output_data = NULL;
         tdm_drm_layer_data *layer_data;
         drmModePlanePtr plane;
 
@@ -544,7 +544,7 @@ _tdm_drm_display_cb_destroy_buffer(tbm_surface_h buffer, void *user_data)
 tdm_error
 tdm_drm_display_create_layer_list(tdm_drm_data *drm_data)
 {
-    tdm_drm_output_data *output_data;
+    tdm_drm_output_data *output_data = NULL;
     tdm_error ret;
 
     ret = _tdm_drm_display_create_layer_list(drm_data);
@@ -705,8 +705,8 @@ tdm_drm_display_create_output_list(tdm_drm_data *drm_data)
         if (!output_data->output_modes)
         {
             TDM_ERR("alloc failed");
-            free(output_data);
             free(output_data->drm_modes);
+            free(output_data);
             drmModeFreeConnector(connector);
             drmModeFreeEncoder(encoder);
             ret = TDM_ERROR_OUT_OF_MEMORY;
@@ -751,7 +751,7 @@ tdm_output**
 drm_display_get_outputs(tdm_backend_data *bdata, int *count, tdm_error *error)
 {
     tdm_drm_data *drm_data = bdata;
-    tdm_drm_output_data *output_data;
+    tdm_drm_output_data *output_data = NULL;
     tdm_output **outputs;
     tdm_error ret;
     int i;
@@ -923,7 +923,7 @@ tdm_layer**
 drm_output_get_layers(tdm_output *output,  int *count, tdm_error *error)
 {
     tdm_drm_output_data *output_data = output;
-    tdm_drm_layer_data *layer_data;
+    tdm_drm_layer_data *layer_data = NULL;
     tdm_layer **layers;
     tdm_error ret;
     int i;
@@ -1078,7 +1078,7 @@ drm_output_commit(tdm_output *output, int sync, void *user_data)
 {
     tdm_drm_output_data *output_data = output;
     tdm_drm_data *drm_data;
-    tdm_drm_layer_data *layer_data;
+    tdm_drm_layer_data *layer_data = NULL;
     tdm_error ret;
 
     RETURN_VAL_IF_FAIL(output_data, TDM_ERROR_INVALID_PARAMETER);
@@ -1435,6 +1435,7 @@ drm_layer_set_buffer(tdm_layer *layer, tbm_surface_h buffer)
         if (err != TDM_ERROR_NONE)
         {
             TDM_ERR("add destroy handler fail");
+            free(display_buffer);
             return TDM_ERROR_OPERATION_FAILED;
         }
 
