@@ -198,6 +198,11 @@ tdm_drm_init(tdm_display *dpy, tdm_error *error)
 
     drm_data->dpy = dpy;
 
+    /* TODO: tdm_helper_drm_fd is external drm_fd which is opened by ecore_drm.
+     * This is very tricky. But we can't remove tdm_helper_drm_fd now because
+     * ecore_drm doesn't use tdm yet. When we make ecore_drm use tdm,
+     * tdm_helper_drm_fd will be removed.
+     */
     drm_data->drm_fd = -1;
     if (tdm_helper_drm_fd >= 0)
         drm_data->drm_fd = tdm_helper_drm_fd;
