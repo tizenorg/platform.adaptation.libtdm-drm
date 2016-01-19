@@ -16,6 +16,7 @@ typedef enum
 {
     VBLANK_TYPE_WAIT,
     VBLANK_TYPE_COMMIT,
+    VBLANK_TYPE_PAGEFLIP,
 } vblank_type;
 
 typedef struct _tdm_drm_display_buffer
@@ -86,6 +87,9 @@ struct _tdm_drm_layer_data
 
 typedef struct _Drm_Event_Context
 {
+    void (*pageflip_handler)(int fd, unsigned int sequence, unsigned int tv_sec,
+                           unsigned int tv_usec, void *user_data);
+
     void (*vblank_handler)(int fd, unsigned int sequence, unsigned int tv_sec,
                            unsigned int tv_usec, void *user_data);
 } Drm_Event_Context;
@@ -188,7 +192,7 @@ _tdm_drm_display_wait_vblank(int fd, int pipe, uint *target_msc, void *data)
 }
 
 static tdm_error
-_tdm_drm_display_commit_primary_layer(tdm_drm_layer_data *layer_data)
+_tdm_drm_display_commit_primary_layer(tdm_drm_layer_data *layer_data, void *user_data, int *do_waitvblank)
 {
     tdm_drm_data *drm_data = layer_data->drm_data;
     tdm_drm_output_data *output_data = layer_data->output_data;
@@ -221,7 +225,7 @@ _tdm_drm_display_commit_primary_layer(tdm_drm_layer_data *layer_data)
             TDM_ERR("set crtc failed: %m");
             return TDM_ERROR_OPERATION_FAILED;
         }
-
+        *do_waitvblank = 1;
         return TDM_ERROR_NONE;
     }
     else if (layer_data->display_buffer_changed)
@@ -236,15 +240,28 @@ _tdm_drm_display_commit_primary_layer(tdm_drm_layer_data *layer_data)
                 TDM_ERR("unset crtc failed: %m");
                 return TDM_ERROR_OPERATION_FAILED;
             }
+            *do_waitvblank = 1;
         }
         else
         {
+            tdm_drm_vblank_data *vblank_data = calloc(1, sizeof(tdm_drm_vblank_data));
+
+            if (!vblank_data)
+            {
+                TDM_ERR("alloc failed");
+                return TDM_ERROR_OUT_OF_MEMORY;
+            }
+
+            vblank_data->type = VBLANK_TYPE_PAGEFLIP;
+            vblank_data->output_data = output_data;
+            vblank_data->user_data = user_data;
             if (drmModePageFlip(drm_data->drm_fd, output_data->crtc_id,
-                                layer_data->display_buffer->fb_id, DRM_MODE_PAGE_FLIP_EVENT, layer_data->display_buffer))
+                                layer_data->display_buffer->fb_id, DRM_MODE_PAGE_FLIP_EVENT, vblank_data))
             {
                 TDM_ERR("pageflip failed: %m");
                 return TDM_ERROR_OPERATION_FAILED;
             }
+            *do_waitvblank = 0;
         }
     }
 
@@ -338,8 +355,37 @@ _tdm_drm_display_cb_vblank(int fd, unsigned int sequence,
             output_data->commit_func(output_data, sequence, tv_sec, tv_usec, vblank_data->user_data);
         break;
     default:
+        break;
+    }
+	free(vblank_data);
+}
+
+static void
+_tdm_drm_display_cb_pageflip(int fd, unsigned int sequence,
+                              unsigned int tv_sec, unsigned int tv_usec,
+                              void *user_data)
+{
+    tdm_drm_vblank_data *vblank_data = user_data;
+    tdm_drm_output_data *output_data;
+
+    if (!vblank_data)
+    {
+        TDM_ERR("no vblank data");
         return;
     }
+
+    output_data = vblank_data->output_data;
+
+    switch(vblank_data->type)
+    {
+    case VBLANK_TYPE_PAGEFLIP:
+        if (output_data->commit_func)
+            output_data->commit_func(output_data, sequence, tv_sec, tv_usec, vblank_data->user_data);
+        break;
+    default:
+        break;
+    }
+	free(vblank_data);
 }
 
 static int
@@ -392,7 +438,19 @@ _tdm_drm_display_events_handle(int fd, Drm_Event_Context *evctx)
                 }
                 break;
             case DRM_EVENT_FLIP_COMPLETE:
-                /* do nothing for flip complete */
+                {
+                    struct drm_event_vblank *vblank;
+
+                    if (evctx->pageflip_handler == NULL)
+                        break;
+
+                    vblank = (struct drm_event_vblank *)e;
+                    TDM_DBG("******* PAGEFLIP *******");
+                    evctx->pageflip_handler (fd, vblank->sequence,
+                                           vblank->tv_sec, vblank->tv_usec,
+                                           (void *)((unsigned long)vblank->user_data));
+                    TDM_DBG("******* PAGEFLIP *******...");
+                }
                 break;
             default:
                 break;
@@ -816,6 +874,7 @@ drm_display_handle_events(tdm_backend_data *bdata)
 
     memset(&ctx, 0, sizeof(Drm_Event_Context));
 
+    ctx.pageflip_handler = _tdm_drm_display_cb_pageflip;
     ctx.vblank_handler = _tdm_drm_display_cb_vblank;
 
     _tdm_drm_display_events_handle(drm_data->drm_fd, &ctx);
@@ -1080,6 +1139,7 @@ drm_output_commit(tdm_output *output, int sync, void *user_data)
     tdm_drm_data *drm_data;
     tdm_drm_layer_data *layer_data = NULL;
     tdm_error ret;
+    int do_waitvblank = 1;
 
     RETURN_VAL_IF_FAIL(output_data, TDM_ERROR_INVALID_PARAMETER);
 
@@ -1089,7 +1149,7 @@ drm_output_commit(tdm_output *output, int sync, void *user_data)
     {
         if (layer_data == output_data->primary_layer)
         {
-            ret = _tdm_drm_display_commit_primary_layer(layer_data);
+            ret = _tdm_drm_display_commit_primary_layer(layer_data, user_data, &do_waitvblank);
             if (ret != TDM_ERROR_NONE)
                 return ret;
         }
@@ -1106,7 +1166,7 @@ drm_output_commit(tdm_output *output, int sync, void *user_data)
      * ecore_drm doesn't use tdm yet. When we make ecore_drm use tdm,
      * tdm_helper_drm_fd will be removed.
      */
-    if (tdm_helper_drm_fd == -1)
+    if ((tdm_helper_drm_fd == -1) && (do_waitvblank == 1))
     {
         tdm_drm_vblank_data *vblank_data = calloc(1, sizeof(tdm_drm_vblank_data));
         uint target_msc;
