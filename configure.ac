@@ -34,6 +34,13 @@ fi
 AC_SUBST(TDM_DRM_CFLAGS)
 AC_SUBST(TDM_DRM_LIBS)
 
+AC_DEFINE_UNQUOTED(LIBDRM_MAJOR_VERSION, [`pkg-config --modversion libdrm | cut -d '.' -f 1`], dnl
+                   [libdrm major version])
+AC_DEFINE_UNQUOTED(LIBDRM_MIROR_VERSION, [`pkg-config --modversion libdrm | cut -d '.' -f 2`], dnl
+                   [libdrm major version])
+AC_DEFINE_UNQUOTED(LIBDRM_MICRO_VERSION, [`pkg-config --modversion libdrm | cut -d '.' -f 3`], dnl
+                   [libdrm major version])
+
 # set the dir for the tbm module
 DEFAULT_TDM_MODULE_PATH="${libdir}/tdm"
 AC_ARG_WITH(tdm-module-path, AS_HELP_STRING([--with-tdm-module-path=PATH], [tdm module dir]),

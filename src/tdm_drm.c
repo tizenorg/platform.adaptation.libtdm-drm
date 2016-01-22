@@ -216,8 +216,10 @@ tdm_drm_init(tdm_display *dpy, tdm_error *error)
         goto failed;
     }
 
+#if LIBDRM_MAJOR_VERSION >= 2 && LIBDRM_MINOR_VERSION >= 4  && LIBDRM_MICRO_VERSION >= 47
     if (drmSetClientCap(drm_data->drm_fd, DRM_CLIENT_CAP_UNIVERSAL_PLANES, 1) < 0)
         TDM_WRN("Set DRM_CLIENT_CAP_UNIVERSAL_PLANES failed");
+#endif
 
     drm_data->mode_res = drmModeGetResources(drm_data->drm_fd);
     if (!drm_data->mode_res)
