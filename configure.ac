@@ -1,8 +1,8 @@
 AC_PREREQ([2.60])
-AC_INIT([libtdm-drm],
+AC_INIT([libtdm-fbdev],
         [1.0.0],
         [https://www.tizen.org],
-        [libtdm-drm])
+        [libtdm-fbdev])
 
 AC_CONFIG_HEADERS([config.h])
 AC_CONFIG_SRCDIR([Makefile.am])
@@ -23,7 +23,7 @@ LT_INIT([disable-static])
 # Enable quiet compiles on automake 1.11.
 m4_ifdef([AM_SILENT_RULES], [AM_SILENT_RULES([yes])])
 
-PKG_CHECK_MODULES(TDM_DRM, libtdm libtbm libdrm)
+PKG_CHECK_MODULES(TDM_DRM, libtdm libtbm)
 PKG_CHECK_MODULES(UDEV, libudev, [udev=yes], [udev=no])
 if test x"$udev" = xyes; then
 	AC_DEFINE(HAVE_UDEV,1,[Enable udev-based monitor hotplug detection])
@@ -33,13 +33,6 @@ fi
 
 AC_SUBST(TDM_DRM_CFLAGS)
 AC_SUBST(TDM_DRM_LIBS)
-
-AC_DEFINE_UNQUOTED(LIBDRM_MAJOR_VERSION, [`pkg-config --modversion libdrm | cut -d '.' -f 1`], dnl
-                   [libdrm major version])
-AC_DEFINE_UNQUOTED(LIBDRM_MIROR_VERSION, [`pkg-config --modversion libdrm | cut -d '.' -f 2`], dnl
-                   [libdrm major version])
-AC_DEFINE_UNQUOTED(LIBDRM_MICRO_VERSION, [`pkg-config --modversion libdrm | cut -d '.' -f 3`], dnl
-                   [libdrm major version])
 
 # set the dir for the tbm module
 DEFAULT_TDM_MODULE_PATH="${libdir}/tdm"

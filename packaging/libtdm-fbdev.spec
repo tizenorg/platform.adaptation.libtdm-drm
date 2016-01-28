@@ -1,4 +1,4 @@
-Name:           libtdm-drm
+Name:           libtdm-fbdev
 Version:        1.0.1
 Release:        0
 Summary:        Tizen Display Manager DRM Back-End Library
@@ -11,7 +11,7 @@ BuildRequires: pkgconfig(libudev)
 BuildRequires: pkgconfig(libtdm)
 
 %description
-Back-End library of Tizen Display Manager DRM : libtdm-mgr DRM library
+Back-End library of Tizen Display Manager FBDEV : libtdm-mgr FBDEV library
 
 %prep
 %setup -q
@@ -30,7 +30,7 @@ make %{?_smp_mflags}
 if [ -f %{_libdir}/tdm/libtdm-default.so ]; then
     rm -rf %{_libdir}/tdm/libtdm-default.so
 fi
-ln -s libtdm-drm.so %{_libdir}/tdm/libtdm-default.so
+ln -s libtdm-fbdev.so %{_libdir}/tdm/libtdm-default.so
 
 %postun -p /sbin/ldconfig
 
@@ -38,4 +38,4 @@ ln -s libtdm-drm.so %{_libdir}/tdm/libtdm-default.so
 %manifest %{name}.manifest
 %license COPYING
 %defattr(-,root,root,-)
-%{_libdir}/tdm/libtdm-drm.so
+%{_libdir}/tdm/libtdm-fbdev.so
