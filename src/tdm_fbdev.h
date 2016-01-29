@@ -11,13 +11,18 @@
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <sys/ioctl.h>
+#include <sys/mman.h>
 #include <fcntl.h>
+
+#include <linux/fb.h>
 
 #include <tbm_surface.h>
 #include <tbm_surface_internal.h>
 #include <tdm_backend.h>
 #include <tdm_log.h>
 #include <tdm_list.h>
+
+#define MAX_BUF 3
 
 /* drm backend functions (display) */
 tdm_error    fbdev_display_get_capabilitiy(tdm_backend_data *bdata, tdm_caps_display *caps);
@@ -44,5 +49,19 @@ tdm_error    fbdev_layer_set_info(tdm_layer *layer, tdm_info_layer *info);
 tdm_error    fbdev_layer_get_info(tdm_layer *layer, tdm_info_layer *info);
 tdm_error    fbdev_layer_set_buffer(tdm_layer *layer, tbm_surface_h buffer);
 tdm_error    fbdev_layer_unset_buffer(tdm_layer *layer);
+
+typedef struct _tdm_fbdev_data
+{
+    int fbdev_fd;
+
+    tdm_display *dpy;
+
+    struct fb_fix_screeninfo finfo;
+    struct fb_var_screeninfo vinfo;
+
+    void *vaddr;
+    size_t size;
+}tdm_fbdev_data;
+
 
 #endif /* _TDM_fbdev_H_ */
