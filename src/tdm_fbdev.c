@@ -164,22 +164,6 @@ _tdm_fbdev_init_internal(void)
     }
 
     /*
-     * TODO: Size of framebuffer must be aligned to system page size before
-     *  it is mapped
-     */
-    fbdev_data->size = finfo.line_length * vinfo.yres * MAX_BUF;
-
-    fbdev_data->vaddr = mmap(0, fbdev_data->size, PROT_READ|PROT_WRITE,
-            MAP_SHARED, fbdev_data->fbdev_fd, 0);
-    if (fbdev_data->vaddr == MAP_FAILED)
-    {
-        TDM_ERR("MMap framebuffer failed, errno=%d", errno);
-        goto close_1;
-    }
-
-    memset(fbdev_data->vaddr, 0, fbdev_data->size);
-
-    /*
      * Output framebuffer's related information
      */
     TDM_INFO("\n"
@@ -292,6 +276,13 @@ tdm_fbdev_init(tdm_display *dpy, tdm_error *error)
         goto failed;
     }
 
+    ret = tdm_fbdev_creat_output(fbdev_data);
+    if (ret != TDM_ERROR_NONE)
+    {
+        TDM_INFO("init of output failed");
+        goto failed_2;
+    }
+
 
     TDM_INFO("init success!");
 
@@ -299,6 +290,9 @@ tdm_fbdev_init(tdm_display *dpy, tdm_error *error)
         *error = TDM_ERROR_NONE;
 
     return (tdm_backend_data*)fbdev_data;
+
+failed_2:
+    tdm_fbdev_destroy_output(fbdev_data);
 
 failed:
     if(error)

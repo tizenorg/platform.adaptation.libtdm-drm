@@ -50,6 +50,16 @@ tdm_error    fbdev_layer_get_info(tdm_layer *layer, tdm_info_layer *info);
 tdm_error    fbdev_layer_set_buffer(tdm_layer *layer, tbm_surface_h buffer);
 tdm_error    fbdev_layer_unset_buffer(tdm_layer *layer);
 
+/* Framebuffer moudel's internal macros, functions, structures */
+#define RETURN_VAL_IF_FAIL(cond, val) {\
+    if (!(cond)) {\
+        TDM_ERR("'%s' failed", #cond);\
+        return val;\
+    }\
+}
+
+typedef struct _tdm_fbdev_output_data tdm_fbdev_output_data;
+
 typedef struct _tdm_fbdev_data
 {
     int fbdev_fd;
@@ -59,9 +69,30 @@ typedef struct _tdm_fbdev_data
     struct fb_fix_screeninfo finfo;
     struct fb_var_screeninfo vinfo;
 
-    void *vaddr;
-    size_t size;
-}tdm_fbdev_data;
+    tdm_fbdev_output_data *fbdev_output;
+} tdm_fbdev_data;
 
+struct _tdm_fbdev_output_data
+{
+    tdm_fbdev_data *fbdev_data;
+
+    uint32_t width;
+    uint32_t height;
+    uint32_t pitch;
+    uint32_t bpp;
+    size_t   size;
+
+    /*
+     * Poinetr to Framebuffers's mapped memory
+     */
+    void *vaddr;
+
+    tdm_output_mode *output_modes;
+};
+
+
+
+tdm_error    tdm_fbdev_creat_output(tdm_fbdev_data *fbdev_data);
+void         tdm_fbdev_destroy_output(tdm_fbdev_data *fbdev_data);
 
 #endif /* _TDM_fbdev_H_ */
