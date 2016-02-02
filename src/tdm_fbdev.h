@@ -59,6 +59,7 @@ tdm_error    fbdev_layer_unset_buffer(tdm_layer *layer);
 }
 
 typedef struct _tdm_fbdev_output_data tdm_fbdev_output_data;
+typedef struct _tdm_fbdev_layer_data tdm_fbdev_layer_data;
 
 typedef struct _tdm_fbdev_data
 {
@@ -75,24 +76,39 @@ typedef struct _tdm_fbdev_data
 struct _tdm_fbdev_output_data
 {
     tdm_fbdev_data *fbdev_data;
+    tdm_fbdev_layer_data *fbdev_layer;
 
     uint32_t width;
     uint32_t height;
     uint32_t pitch;
     uint32_t bpp;
     size_t   size;
+    uint32_t max_width;
+    uint32_t max_height;
 
     /*
      * Poinetr to Framebuffers's mapped memory
      */
     void *vaddr;
 
+    int count_modes;
     tdm_output_mode *output_modes;
+
+    tdm_output_type connector_type;
+    tdm_output_conn_status status;
+    unsigned int connector_type_id;
 };
 
-
+struct _tdm_fbdev_layer_data
+{
+	tdm_fbdev_data *fbdev_data;
+	tdm_fbdev_output_data *fbdev_output;
+};
 
 tdm_error    tdm_fbdev_creat_output(tdm_fbdev_data *fbdev_data);
 void         tdm_fbdev_destroy_output(tdm_fbdev_data *fbdev_data);
+
+tdm_error    tdm_fbdev_creat_layer(tdm_fbdev_data *fbdev_data);
+void         tdm_fbdev_destroy_layer(tdm_fbdev_data *fbdev_data);
 
 #endif /* _TDM_fbdev_H_ */
