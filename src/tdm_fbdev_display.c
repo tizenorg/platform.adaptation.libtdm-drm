@@ -22,7 +22,7 @@ tdm_error tdm_fbdev_creat_output(tdm_fbdev_data *fbdev_data)
      * TODO: Size of framebuffer must be aligned to system page size before
      *  it is mapped
      */
-    size = fbdev_data->finfo.line_length * fbdev_data->vinfo.yres * MAX_BUF;
+    size = fbdev_data->vinfo.xres * fbdev_data->vinfo.yres * fbdev_data->vinfo.bits_per_pixel / 8 * MAX_BUF;
 
     output->vaddr = mmap(0, size, PROT_READ|PROT_WRITE,
             MAP_SHARED, fbdev_data->fbdev_fd, 0);
@@ -36,7 +36,7 @@ tdm_error tdm_fbdev_creat_output(tdm_fbdev_data *fbdev_data)
 
     output->width = fbdev_data->vinfo.width;
     output->height = fbdev_data->vinfo.height;
-    output->pitch = fbdev_data->finfo.line_length;
+    output->pitch = fbdev_data->vinfo.width;
     output->bpp = fbdev_data->vinfo.bits_per_pixel;
     output->size = size;
 
