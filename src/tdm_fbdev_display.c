@@ -6,6 +6,91 @@
 #include <stdint.h>
 #include "tdm_fbdev.h"
 
+/*
+ * Framebuffer device supported formats
+ */
+static tbm_format supported_formats[] =
+{
+/*
+    TBM_FORMAT_XRGB8888,
+    TBM_FORMAT_XBGR8888,
+    TBM_FORMAT_RGBX8888,
+    TBM_FORMAT_BGRX8888,
+*/
+    TBM_FORMAT_ARGB8888,
+    TBM_FORMAT_ABGR8888,
+    TBM_FORMAT_RGBA8888,
+    TBM_FORMAT_BGRA8888,
+};
+
+static tdm_fbdev_display_buffer*
+_tdm_fbdev_display_find_buffer(tdm_fbdev_data *fbdev_data, tbm_surface_h buffer)
+{
+    tdm_fbdev_display_buffer *display_buffer = NULL;
+
+    LIST_FOR_EACH_ENTRY(display_buffer, &fbdev_data->buffer_list, link)
+    {
+        if (display_buffer->buffer == buffer)
+            return display_buffer;
+    }
+
+    return NULL;
+}
+
+static void
+_tdm_fbdev_display_cb_destroy_buffer(tbm_surface_h buffer, void *user_data)
+{
+tdm_fbdev_data *fbdev_data;
+tdm_fbdev_display_buffer *display_buffer;
+tbm_bo bo;
+
+    if (!user_data)
+    {
+        TDM_ERR("no user_data");
+        return;
+    }
+    if (!buffer)
+    {
+        TDM_ERR("no buffer");
+        return;
+    }
+
+    fbdev_data = (tdm_fbdev_data *)user_data;
+
+    display_buffer = _tdm_fbdev_display_find_buffer(fbdev_data, buffer);
+    if (!display_buffer)
+    {
+        TDM_ERR("no display_buffer");
+        return;
+    }
+
+    LIST_DEL(&display_buffer->link);
+
+    if(display_buffer->mem != NULL)
+    {
+        bo = tbm_surface_internal_get_bo(buffer, 0);
+
+        /*
+         * TODO: Check tbm_bo_unmap return status
+         */
+    tbm_bo_unmap(bo);
+
+    TDM_DBG("unmap success");
+    }
+    else
+    TDM_DBG("unmap was not called");
+
+    free(display_buffer);
+}
+
+/*
+static int
+_tdm_fbdev_layer_is_supproted_format()
+{
+
+}
+*/
+
 tdm_error
 tdm_fbdev_creat_output(tdm_fbdev_data *fbdev_data)
 {
@@ -125,8 +210,12 @@ tdm_fbdev_creat_layer(tdm_fbdev_data *fbdev_data)
         return TDM_ERROR_OUT_OF_MEMORY;
     }
 
+    layer->capabilities = TDM_LAYER_CAPABILITY_PRIMARY | TDM_LAYER_CAPABILITY_GRAPHIC;
+
     layer->fbdev_data = fbdev_data;
     layer->fbdev_output = fbdev_data->fbdev_output;
+
+
 
     return TDM_ERROR_NONE;
 }
@@ -263,7 +352,7 @@ fbdev_output_get_capability(tdm_output *output, tdm_caps_output *caps)
     caps->preferred_align = -1;
 
     /*
-     * Framebuffer does not have properties
+     * Framebuffer does not have output properties
      */
     caps->prop_count = 0;
     caps->props = NULL;
@@ -321,7 +410,7 @@ tdm_error
 fbdev_output_set_property(tdm_output *output, unsigned int id, tdm_value value)
 {
     /*
-     * Framebuffer does not have properties
+     * Framebuffer does not have output properties
      */
     return TDM_ERROR_NONE;
 }
@@ -330,7 +419,7 @@ tdm_error
 fbdev_output_get_property(tdm_output *output, unsigned int id, tdm_value *value)
 {
     /*
-     * Framebuffer does not have properties
+     * Framebuffer does not have output properties
      */
     return TDM_ERROR_NONE;
 }
@@ -386,41 +475,190 @@ fbdev_output_get_mode(tdm_output *output, const tdm_output_mode **mode)
 tdm_error
 fbdev_layer_get_capability(tdm_layer *layer, tdm_caps_layer *caps)
 {
+    tdm_fbdev_layer_data *fbdev_layer = (tdm_fbdev_layer_data *) layer;
+    tdm_error ret;
+    int i;
+
+    RETURN_VAL_IF_FAIL(fbdev_layer, TDM_ERROR_INVALID_PARAMETER);
+    RETURN_VAL_IF_FAIL(caps, TDM_ERROR_INVALID_PARAMETER);
+
+    memset(caps, 0, sizeof(tdm_caps_layer));
+
+    caps->capabilities = fbdev_layer->capabilities;
+
+    /*
+     * Make our single GRAPHIC layer the lowest one aka "Prime"
+     */
+    caps->zpos = 0;
+
+    caps->format_count = sizeof(supported_formats)/sizeof(supported_formats[0]);
+    caps->formats = calloc(caps->format_count, sizeof(tbm_format));
+    if (!caps->formats)
+    {
+        ret = TDM_ERROR_OUT_OF_MEMORY;
+        TDM_ERR("alloc failed\n");
+        goto failed_get;
+    }
+
+    for( i = 0; i < caps->format_count; i++)
+        caps->formats[i] = supported_formats[i];
+
+    /*
+     * Framebuffer does not have layer properties
+     */
+    caps->prop_count = 0;
+    caps->props = NULL;
+
     return TDM_ERROR_NONE;
+
+failed_get:
+
+    memset(caps, 0, sizeof(tdm_caps_layer));
+    return ret;
 }
 
 tdm_error
 fbdev_layer_set_property(tdm_layer *layer, unsigned int id, tdm_value value)
 {
+   /*
+    * Framebuffer does not have layer properties
+    */
     return TDM_ERROR_NONE;
 }
 
 tdm_error
 fbdev_layer_get_property(tdm_layer *layer, unsigned int id, tdm_value *value)
 {
+    /*
+     * Framebuffer does not have layer properties
+     */
     return TDM_ERROR_NONE;
 }
 
 tdm_error
 fbdev_layer_set_info(tdm_layer *layer, tdm_info_layer *info)
 {
+    tdm_fbdev_layer_data *fbdev_layer = (tdm_fbdev_layer_data *)layer;
+
+    RETURN_VAL_IF_FAIL(fbdev_layer, TDM_ERROR_INVALID_PARAMETER);
+    RETURN_VAL_IF_FAIL(info, TDM_ERROR_INVALID_PARAMETER);
+
+    fbdev_layer->info = *info;
+
+    /*
+     * We do not use info in this backend, therefore just ignore
+     *  info's changing
+     */
+    fbdev_layer->info_changed = 0;
+
     return TDM_ERROR_NONE;
 }
 
 tdm_error
 fbdev_layer_get_info(tdm_layer *layer, tdm_info_layer *info)
 {
+    tdm_fbdev_layer_data *fbdev_layer = (tdm_fbdev_layer_data *)layer;
+
+    RETURN_VAL_IF_FAIL(fbdev_layer, TDM_ERROR_INVALID_PARAMETER);
+    RETURN_VAL_IF_FAIL(info, TDM_ERROR_INVALID_PARAMETER);
+
+    *info = fbdev_layer->info;
+
     return TDM_ERROR_NONE;
 }
 
 tdm_error
 fbdev_layer_set_buffer(tdm_layer *layer, tbm_surface_h buffer)
 {
+    tdm_fbdev_layer_data *fbdev_layer = (tdm_fbdev_layer_data *)layer;
+    tdm_fbdev_display_buffer *display_buffer;
+    tdm_fbdev_data *fbdev_data;
+    int opt = 0;
+    unsigned int format;
+    tbm_bo bo;
+    tbm_bo_handle bo_handle;
+    tdm_error err = TDM_ERROR_NONE;
+
+    RETURN_VAL_IF_FAIL(fbdev_layer, TDM_ERROR_INVALID_PARAMETER);
+    RETURN_VAL_IF_FAIL(buffer, TDM_ERROR_INVALID_PARAMETER);
+
+    if (tbm_surface_internal_get_num_bos(buffer) > 1)
+    {
+        TDM_ERR("Framebuffer backend does not support surfaces with more than one bos");
+        return TDM_ERROR_INVALID_PARAMETER;
+    }
+
+    fbdev_data = fbdev_layer->fbdev_data;
+
+    display_buffer = _tdm_fbdev_display_find_buffer(fbdev_data, buffer);
+    if(!display_buffer)
+    {
+        display_buffer = calloc(1, sizeof(tdm_fbdev_display_buffer));
+        if (display_buffer == NULL)
+        {
+            TDM_ERR("alloc failed");
+            return TDM_ERROR_OUT_OF_MEMORY;
+        }
+
+        display_buffer->buffer = buffer;
+
+        err = tdm_buffer_add_destroy_handler(buffer, _tdm_fbdev_display_cb_destroy_buffer, fbdev_data);
+        if (err != TDM_ERROR_NONE)
+        {
+            TDM_ERR("add destroy handler fail");
+            free(display_buffer);
+            return TDM_ERROR_OPERATION_FAILED;
+        }
+
+        LIST_ADDTAIL(&display_buffer->link, &fbdev_data->buffer_list);
+    }
+
+    if (display_buffer->mem == NULL)
+    {
+        display_buffer->width = tbm_surface_get_width(buffer);
+        display_buffer->height = tbm_surface_get_height(buffer);
+
+        /*
+         * TODO: Have to get more correct bo's size
+         */
+        display_buffer->size = display_buffer->width * display_buffer->height;
+
+        format = tbm_surface_get_format(buffer);
+        (void)format;
+        /*
+         * TODO: We have got drm format here, have to be checked whether
+         *  Framebuffer device supports this format.
+         *  Do we need it at all?
+         */
+
+        bo = tbm_surface_internal_get_bo(buffer, 0);
+        bo_handle = tbm_bo_map(bo, TBM_DEVICE_CPU, opt);
+
+        /*
+         * When surface will be about to be destroyed there will have been
+         *  invoked our destroy handler which will unmap bo and free
+         *  display_buffer memory
+         */
+        display_buffer->mem = bo_handle.ptr;
+
+        TDM_DBG("mmap success");
+    }
+
+    fbdev_layer->display_buffer = display_buffer;
+    fbdev_layer->display_buffer_changed = 1;
+
     return TDM_ERROR_NONE;
 }
 
 tdm_error
 fbdev_layer_unset_buffer(tdm_layer *layer)
 {
+    tdm_fbdev_layer_data *fbdev_layer = (tdm_fbdev_layer_data *)layer;
+
+    RETURN_VAL_IF_FAIL(fbdev_layer, TDM_ERROR_INVALID_PARAMETER);
+
+    fbdev_layer->display_buffer = NULL;
+    fbdev_layer->display_buffer_changed = 1;
+
     return TDM_ERROR_NONE;
 }

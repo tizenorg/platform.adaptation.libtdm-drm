@@ -24,7 +24,7 @@
 
 #define MAX_BUF 3
 
-/* drm backend functions (display) */
+/* fbdev backend functions (display) */
 tdm_error    fbdev_display_get_capabilitiy(tdm_backend_data *bdata, tdm_caps_display *caps);
 tdm_output** fbdev_display_get_outputs(tdm_backend_data *bdata, int *count, tdm_error *error);
 tdm_error    fbdev_display_get_fd(tdm_backend_data *bdata, int *fd);
@@ -60,9 +60,12 @@ tdm_error    fbdev_layer_unset_buffer(tdm_layer *layer);
 
 typedef struct _tdm_fbdev_output_data tdm_fbdev_output_data;
 typedef struct _tdm_fbdev_layer_data tdm_fbdev_layer_data;
+typedef struct _tdm_fbdev_display_buffer tdm_fbdev_display_buffer;
 
 typedef struct _tdm_fbdev_data
 {
+    tdm_fbdev_output_data *fbdev_output;
+
     int fbdev_fd;
 
     tdm_display *dpy;
@@ -70,7 +73,7 @@ typedef struct _tdm_fbdev_data
     struct fb_fix_screeninfo finfo;
     struct fb_var_screeninfo vinfo;
 
-    tdm_fbdev_output_data *fbdev_output;
+    struct list_head buffer_list;
 } tdm_fbdev_data;
 
 struct _tdm_fbdev_output_data
@@ -101,8 +104,31 @@ struct _tdm_fbdev_output_data
 
 struct _tdm_fbdev_layer_data
 {
-	tdm_fbdev_data *fbdev_data;
-	tdm_fbdev_output_data *fbdev_output;
+    tdm_fbdev_data *fbdev_data;
+    tdm_fbdev_output_data *fbdev_output;
+
+    tdm_fbdev_display_buffer *display_buffer;
+    int display_buffer_changed;
+
+    tdm_layer_capability capabilities;
+    tdm_info_layer info;
+    int info_changed;
+};
+
+struct _tdm_fbdev_display_buffer
+{
+    struct list_head link;
+
+    int width;
+    int height;
+    int size;
+
+    /*
+     * Buffer's mapped memory
+     */
+    void *mem;
+
+    tbm_surface_h buffer;
 };
 
 tdm_error    tdm_fbdev_creat_output(tdm_fbdev_data *fbdev_data);

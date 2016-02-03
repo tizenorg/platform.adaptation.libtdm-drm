@@ -257,6 +257,8 @@ tdm_fbdev_init(tdm_display *dpy, tdm_error *error)
     if (ret != TDM_ERROR_NONE)
         goto failed;
 
+    LIST_INITHEAD(&fbdev_data->buffer_list);
+
     fbdev_data->dpy = dpy;
 
     /*
