@@ -72,37 +72,37 @@ close:
 static tdm_error
 _tdm_fbdev_init_internal(void)
 {
-    struct fb_fix_screeninfo finfo;
-    struct fb_var_screeninfo vinfo;
+    struct fb_fix_screeninfo *finfo = calloc(1, sizeof(struct fb_fix_screeninfo));
+    struct fb_var_screeninfo *vinfo = calloc(1, sizeof(struct fb_var_screeninfo));
     int ret = -1;
 
-    ret = ioctl(fbdev_data->fbdev_fd, FBIOGET_VSCREENINFO, &vinfo);
+    ret = ioctl(fbdev_data->fbdev_fd, FBIOGET_VSCREENINFO, vinfo);
     if (ret < 0)
     {
         TDM_ERR("FBIOGET_VSCREENINFO ioctl failed errno=%d", errno);
         goto close_1;
     }
 
-    vinfo.reserved[0] = 0;
-    vinfo.reserved[1] = 0;
-    vinfo.reserved[2] = 0;
-    vinfo.xoffset = 0;
-    vinfo.yoffset = 0;
-    vinfo.activate = FB_ACTIVATE_NOW;
+    vinfo->reserved[0] = 0;
+    vinfo->reserved[1] = 0;
+    vinfo->reserved[2] = 0;
+    vinfo->xoffset = 0;
+    vinfo->yoffset = 0;
+    vinfo->activate = FB_ACTIVATE_NOW;
 
     /*
      * Explicitly request 32 bits per pixel colors with corresponding
      * red, blue and green color offsets and length of colors
      */
-    vinfo.bits_per_pixel = 32;
-    vinfo.red.offset     = 16;
-    vinfo.red.length     = 8;
-    vinfo.green.offset   = 8;
-    vinfo.green.length   = 8;
-    vinfo.blue.offset    = 0;
-    vinfo.blue.length    = 8;
-    vinfo.transp.offset  = 0;
-    vinfo.transp.length  = 0;
+    vinfo->bits_per_pixel = 32;
+    vinfo->red.offset     = 16;
+    vinfo->red.length     = 8;
+    vinfo->green.offset   = 8;
+    vinfo->green.length   = 8;
+    vinfo->blue.offset    = 0;
+    vinfo->blue.length    = 8;
+    vinfo->transp.offset  = 0;
+    vinfo->transp.length  = 0;
 
     /*
      * Almost all framebuffers support off screen rendering.
@@ -131,13 +131,13 @@ _tdm_fbdev_init_internal(void)
      *    +-------------+     |     +-------------+     |      +-------------+
      *                        |                         |
      */
-    vinfo.yres_virtual = vinfo.yres * MAX_BUF;
+    vinfo->yres_virtual = vinfo->yres * MAX_BUF;
 
     ret = ioctl(fbdev_data->fbdev_fd, FBIOPAN_DISPLAY, vinfo);
     if(ret < 0)
     {
         TDM_INFO("page flip not supported,  errno=%d", errno);
-        vinfo.yres_virtual = vinfo.yres;
+        vinfo->yres_virtual = vinfo->yres;
 
         /*
          * TODO: Does FBIOPAN_DISPLAY ioctl must be invoked for the second time?
@@ -157,11 +157,14 @@ _tdm_fbdev_init_internal(void)
         goto close_1;
     }
 
-    if (finfo.smem_len <= 0)
+    if (finfo->smem_len <= 0)
     {
         TDM_ERR("Length of frame buffer mem less then 0");
         goto close_1;
     }
+
+    fbdev_data->vinfo = vinfo;
+    fbdev_data->finfo = finfo;
 
     /*
      * Output framebuffer's related information
@@ -182,27 +185,27 @@ _tdm_fbdev_init_internal(void)
              "   width        = %d mm \n"
              "   height       = %d mm \n",
              fbdev_data->fbdev_fd,
-             vinfo.xres,
-             vinfo.yres,
-             vinfo.xres_virtual,
-             vinfo.yres_virtual,
-             vinfo.bits_per_pixel,
-             vinfo.red.offset, vinfo.red.length,
-             vinfo.green.offset, vinfo.green.length,
-             vinfo.blue.offset, vinfo.blue.length,
-             vinfo.transp.offset, vinfo.transp.length,
-             vinfo.activate,
-             vinfo.width,
-             vinfo.height);
+             vinfo->xres,
+             vinfo->yres,
+             vinfo->xres_virtual,
+             vinfo->yres_virtual,
+             vinfo->bits_per_pixel,
+             vinfo->red.offset, vinfo->red.length,
+             vinfo->green.offset, vinfo->green.length,
+             vinfo->blue.offset, vinfo->blue.length,
+             vinfo->transp.offset, vinfo->transp.length,
+             vinfo->activate,
+             vinfo->width,
+             vinfo->height);
 
     TDM_INFO("\n"
              " FInfo\n"
              "   id          = %s\n"
              "   smem_len    = %d\n"
              "   line_length = %d\n",
-             finfo.id,
-             finfo.smem_len,
-             finfo.line_length);
+             finfo->id,
+             finfo->smem_len,
+             finfo->line_length);
 
     return TDM_ERROR_NONE;
 close_1:
@@ -219,6 +222,9 @@ tdm_fbdev_deinit(tdm_backend_data *bdata)
     TDM_INFO("deinit");
 
     close(fbdev_data->fbdev_fd);
+
+    tdm_fbdev_destroy_layer(fbdev_data);
+    tdm_fbdev_destroy_output(fbdev_data);
 
     free(fbdev_data);
     fbdev_data = NULL;
@@ -285,6 +291,13 @@ tdm_fbdev_init(tdm_display *dpy, tdm_error *error)
         goto failed_2;
     }
 
+    ret = tdm_fbdev_creat_layer(fbdev_data);
+    if (ret != TDM_ERROR_NONE)
+    {
+        TDM_INFO("init of output failed");
+        goto failed_3;
+    }
+
 
     TDM_INFO("init success!");
 
@@ -293,6 +306,8 @@ tdm_fbdev_init(tdm_display *dpy, tdm_error *error)
 
     return (tdm_backend_data*)fbdev_data;
 
+failed_3:
+    tdm_fbdev_destroy_layer(fbdev_data);
 failed_2:
     tdm_fbdev_destroy_output(fbdev_data);
 

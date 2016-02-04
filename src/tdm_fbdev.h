@@ -51,6 +51,8 @@ tdm_error    fbdev_layer_set_buffer(tdm_layer *layer, tbm_surface_h buffer);
 tdm_error    fbdev_layer_unset_buffer(tdm_layer *layer);
 
 /* Framebuffer moudel's internal macros, functions, structures */
+#define NEVER_GET_HERE() TDM_ERR("** NEVER GET HERE **")
+
 #define RETURN_VAL_IF_FAIL(cond, val) {\
     if (!(cond)) {\
         TDM_ERR("'%s' failed", #cond);\
@@ -70,8 +72,8 @@ typedef struct _tdm_fbdev_data
 
     tdm_display *dpy;
 
-    struct fb_fix_screeninfo finfo;
-    struct fb_var_screeninfo vinfo;
+    struct fb_fix_screeninfo *finfo;
+    struct fb_var_screeninfo *vinfo;
 
     struct list_head buffer_list;
 } tdm_fbdev_data;
@@ -92,14 +94,28 @@ struct _tdm_fbdev_output_data
     /*
      * Poinetr to Framebuffers's mapped memory
      */
-    void *vaddr;
+    void *mem;
 
     int count_modes;
     tdm_output_mode *output_modes;
+    int mode_changed;
+
+    /*
+     * We currently support only one mode
+     */
+    const tdm_output_mode *current_mode;
 
     tdm_output_type connector_type;
     tdm_output_conn_status status;
     unsigned int connector_type_id;
+
+    tdm_output_dpms dpms_value;
+
+    /*
+     * Event handlers
+     */
+    tdm_output_vblank_handler vblank_func;
+    tdm_output_commit_handler commit_func;
 };
 
 struct _tdm_fbdev_layer_data

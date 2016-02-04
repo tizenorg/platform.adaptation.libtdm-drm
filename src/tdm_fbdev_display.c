@@ -40,9 +40,9 @@ _tdm_fbdev_display_find_buffer(tdm_fbdev_data *fbdev_data, tbm_surface_h buffer)
 static void
 _tdm_fbdev_display_cb_destroy_buffer(tbm_surface_h buffer, void *user_data)
 {
-tdm_fbdev_data *fbdev_data;
-tdm_fbdev_display_buffer *display_buffer;
-tbm_bo bo;
+    tdm_fbdev_data *fbdev_data;
+    tdm_fbdev_display_buffer *display_buffer;
+    tbm_bo bo;
 
     if (!user_data)
     {
@@ -109,25 +109,29 @@ tdm_fbdev_creat_output(tdm_fbdev_data *fbdev_data)
      * TODO: Size of framebuffer must be aligned to system page size before
      *  it is mapped
      */
-    size = fbdev_data->vinfo.xres * fbdev_data->vinfo.yres * fbdev_data->vinfo.bits_per_pixel / 8 * MAX_BUF;
+    size = fbdev_data->vinfo->xres * fbdev_data->vinfo->yres * fbdev_data->vinfo->bits_per_pixel / 8 * MAX_BUF;
 
-    output->vaddr = mmap(0, size, PROT_READ|PROT_WRITE,
+    TDM_INFO("\n"
+             "MMaped size: %zu\n",
+             size);
+
+    output->mem = mmap(0, size, PROT_READ|PROT_WRITE,
             MAP_SHARED, fbdev_data->fbdev_fd, 0);
-    if (output->vaddr == MAP_FAILED)
+    if (output->mem == MAP_FAILED)
     {
         TDM_ERR("MMap framebuffer failed, errno=%d", errno);
         return TDM_ERROR_OPERATION_FAILED;
     }
 
-    memset(output->vaddr, 0, size);
+    memset(output->mem, 0, size);
 
-    output->width = fbdev_data->vinfo.xres;
-    output->height = fbdev_data->vinfo.yres;
-    output->pitch = fbdev_data->vinfo.width;
-    output->bpp = fbdev_data->vinfo.bits_per_pixel;
+    output->width = fbdev_data->vinfo->xres;
+    output->height = fbdev_data->vinfo->yres;
+    output->pitch = fbdev_data->vinfo->width;
+    output->bpp = fbdev_data->vinfo->bits_per_pixel;
     output->size = size;
-    output->max_width  = fbdev_data->vinfo.xres_virtual;
-    output->max_height = fbdev_data->vinfo.yres_virtual;
+    output->max_width  = fbdev_data->vinfo->xres_virtual;
+    output->max_height = fbdev_data->vinfo->yres_virtual;
 
     output->status = TDM_OUTPUT_CONN_STATUS_CONNECTED;
     output->connector_type = TDM_OUTPUT_TYPE_LVDS;
@@ -153,16 +157,22 @@ tdm_fbdev_creat_output(tdm_fbdev_data *fbdev_data)
 
     for(i = 0; i < output->count_modes ; i++)
     {
-        output->output_modes[i].width = fbdev_data->vinfo.xres;
-        output->output_modes[i].height = fbdev_data->vinfo.yres;
+        output->output_modes[i].width = fbdev_data->vinfo->xres;
+        output->output_modes[i].height = fbdev_data->vinfo->yres;
         output->output_modes[i].refresh = 60;
         output->output_modes[i].flags = -1;
         output->output_modes[i].type = -1;
 
         sprintf(output->output_modes[i].name, "%dx%d",
-                fbdev_data->vinfo.width,
-                fbdev_data->vinfo.height);
+                fbdev_data->vinfo->width,
+                fbdev_data->vinfo->height);
     }
+
+    /*
+     * We currently support only one mode
+     */
+    if (output->count_modes == 1)
+        output->current_mode = &output->output_modes[0];
 
     output->fbdev_data = fbdev_data;
     fbdev_data->fbdev_output = output;
@@ -178,10 +188,13 @@ tdm_fbdev_destroy_output(tdm_fbdev_data *fbdev_data)
     if (fbdev_output == NULL)
         goto close;
 
-    if (fbdev_output->vaddr == NULL)
+    free(fbdev_data->vinfo);
+    free(fbdev_data->finfo);
+
+    if (fbdev_output->mem == NULL)
         goto close_2;
 
-    munmap(fbdev_output->vaddr, fbdev_output->size);
+    munmap(fbdev_output->mem, fbdev_output->size);
 
     if (fbdev_output->output_modes == NULL)
         goto close_2;
@@ -197,7 +210,8 @@ close:
 tdm_error
 tdm_fbdev_creat_layer(tdm_fbdev_data *fbdev_data)
 {
-    tdm_fbdev_layer_data *layer = NULL;
+    tdm_fbdev_layer_data *layer;
+    tdm_fbdev_output_data *fbdev_output = fbdev_data->fbdev_output;
 
     /*
      * Framebuffer does not support layer, therefore create only
@@ -213,9 +227,8 @@ tdm_fbdev_creat_layer(tdm_fbdev_data *fbdev_data)
     layer->capabilities = TDM_LAYER_CAPABILITY_PRIMARY | TDM_LAYER_CAPABILITY_GRAPHIC;
 
     layer->fbdev_data = fbdev_data;
-    layer->fbdev_output = fbdev_data->fbdev_output;
-
-
+    layer->fbdev_output = fbdev_output;
+    fbdev_output->fbdev_layer = layer;
 
     return TDM_ERROR_NONE;
 }
@@ -223,7 +236,11 @@ tdm_fbdev_creat_layer(tdm_fbdev_data *fbdev_data)
 void
 tdm_fbdev_destroy_layer(tdm_fbdev_data *fbdev_data)
 {
+    tdm_fbdev_output_data *fbdev_output = fbdev_data->fbdev_output;
+    tdm_fbdev_layer_data *layer = fbdev_output->fbdev_layer;
 
+    if(layer != NULL)
+        free(layer);
 }
 
 tdm_error
@@ -288,15 +305,17 @@ failed_get:
 tdm_error
 fbdev_display_get_fd(tdm_backend_data *bdata, int *fd)
 {
-    RETURN_VAL_IF_FAIL(bdata, TDM_ERROR_INVALID_PARAMETER);
+    tdm_fbdev_data *fbdev_data = (tdm_fbdev_data *)bdata;
+
+    RETURN_VAL_IF_FAIL(fbdev_data, TDM_ERROR_INVALID_PARAMETER);
     RETURN_VAL_IF_FAIL(fd, TDM_ERROR_INVALID_PARAMETER);
 
     /*
-     * TODO: Shloud we implement this call, because it is tricky place since we don't know how drm
-     *  file descriptor is used by software above in drm backend;
-     *
+     * TODO: Shloud we implement this call, because it is tricky place
+     *  since we don't know how drm file descriptor is used by software
+     *  above us;
      */
-    *fd = -1;
+    *fd = fbdev_data->fbdev_fd;
 
     return TDM_ERROR_NONE;
 }
@@ -341,8 +360,8 @@ fbdev_output_get_capability(tdm_output *output, tdm_caps_output *caps)
     for (i = 0; i < caps->mode_count; i++)
         caps->modes[i] = fbdev_output->output_modes[i];
 
-    caps->mmWidth = fbdev_data->vinfo.width;;
-    caps->mmHeight = fbdev_data->vinfo.height;
+    caps->mmWidth = fbdev_data->vinfo->width;;
+    caps->mmHeight = fbdev_data->vinfo->height;
     caps->subpixel = -1;
 
     caps->min_w = fbdev_output->width;
@@ -368,7 +387,6 @@ tdm_layer**
 fbdev_output_get_layers(tdm_output *output,  int *count, tdm_error *error)
 {
     tdm_fbdev_output_data *fbdev_output= (tdm_fbdev_output_data *)output;
-    tdm_fbdev_layer_data *fbdev_layer = NULL;
     tdm_layer **layers;
     tdm_error ret;
 
@@ -390,9 +408,7 @@ fbdev_output_get_layers(tdm_output *output,  int *count, tdm_error *error)
         goto failed_get;
     }
 
-    fbdev_layer = fbdev_output->fbdev_layer;
-
-    layers[0] = fbdev_layer;
+    layers[0] = fbdev_output->fbdev_layer;;
 
     if (error)
         *error = TDM_ERROR_NONE;
@@ -427,48 +443,165 @@ fbdev_output_get_property(tdm_output *output, unsigned int id, tdm_value *value)
 tdm_error
 fbdev_output_wait_vblank(tdm_output *output, int interval, int sync, void *user_data)
 {
+
+
     return TDM_ERROR_NONE;
 }
 
 tdm_error
 fbdev_output_set_vblank_handler(tdm_output *output, tdm_output_vblank_handler func)
 {
+    tdm_fbdev_output_data *fbdev_output = (tdm_fbdev_output_data *)output;
+
+    RETURN_VAL_IF_FAIL(fbdev_output, TDM_ERROR_INVALID_PARAMETER);
+    RETURN_VAL_IF_FAIL(func, TDM_ERROR_INVALID_PARAMETER);
+
+    fbdev_output->vblank_func = func;
+
     return TDM_ERROR_NONE;
 }
 
 tdm_error
 fbdev_output_commit(tdm_output *output, int sync, void *user_data)
 {
+    tdm_fbdev_output_data *fbdev_output = (tdm_fbdev_output_data *)output;
+    tdm_fbdev_layer_data *fbdev_layer;
+    tdm_fbdev_display_buffer *display_buffer;
+
+    RETURN_VAL_IF_FAIL(fbdev_output, TDM_ERROR_INVALID_PARAMETER);
+
+    fbdev_layer = fbdev_output->fbdev_layer;
+
+    if (!fbdev_layer->display_buffer_changed)
+        return TDM_ERROR_NONE;
+
+    fbdev_output->mode_changed = 0;
+    fbdev_layer->display_buffer_changed = 0;
+    fbdev_layer->info_changed = 0;
+
+    display_buffer = fbdev_layer->display_buffer;
+
+    /*
+     * Display buffer's content to screen
+     */
+    memcpy(fbdev_output->mem, display_buffer->mem, sizeof(display_buffer->size) );
+
     return TDM_ERROR_NONE;
 }
 
 tdm_error
 fbdev_output_set_commit_handler(tdm_output *output, tdm_output_commit_handler func)
 {
+    tdm_fbdev_output_data *fbdev_output = (tdm_fbdev_output_data *)output;
+
+    RETURN_VAL_IF_FAIL(fbdev_output, TDM_ERROR_INVALID_PARAMETER);
+    RETURN_VAL_IF_FAIL(func, TDM_ERROR_INVALID_PARAMETER);
+
+    fbdev_output->commit_func = func;
+
     return TDM_ERROR_NONE;
 }
 
 tdm_error
 fbdev_output_set_dpms(tdm_output *output, tdm_output_dpms dpms_value)
 {
+    tdm_fbdev_output_data *fbdev_output = (tdm_fbdev_output_data *)output;
+    tdm_fbdev_data *fbdev_data;
+    int ret;
+
+    RETURN_VAL_IF_FAIL(fbdev_output, TDM_ERROR_INVALID_PARAMETER);
+
+    /*
+     * Bypass context switching overhead
+     */
+    if (fbdev_output->dpms_value == dpms_value)
+        return TDM_ERROR_NONE;
+
+    fbdev_data = fbdev_output->fbdev_data;
+
+    switch (dpms_value)
+    {
+        case TDM_OUTPUT_DPMS_ON:
+
+            ret = ioctl(fbdev_data->fbdev_fd, FBIOBLANK, FB_BLANK_UNBLANK);
+            if (ret < 0)
+            {
+                TDM_ERR("FBIOBLANK UNBLANK ioctl failed, errno=%d", errno);
+                return TDM_ERROR_OPERATION_FAILED;
+            }
+
+            break;
+
+        case TDM_OUTPUT_DPMS_OFF:
+
+            ret = ioctl(fbdev_data->fbdev_fd, FBIOBLANK, FB_BLANK_POWERDOWN);
+            if (ret < 0)
+            {
+                TDM_ERR("FBIOBLANK POWERDOWN ioctl failed, errno=%d", errno);
+                return TDM_ERROR_OPERATION_FAILED;
+            }
+
+            break;
+
+        case TDM_OUTPUT_DPMS_STANDBY:
+        case TDM_OUTPUT_DPMS_SUSPEND:
+            break;
+
+        default:
+            NEVER_GET_HERE();
+            break;
+    }
+
+    fbdev_output->dpms_value = dpms_value;
+
     return TDM_ERROR_NONE;
 }
 
 tdm_error
 fbdev_output_get_dpms(tdm_output *output, tdm_output_dpms *dpms_value)
 {
+    tdm_fbdev_output_data *fbdev_output = (tdm_fbdev_output_data *)output;
+
+    RETURN_VAL_IF_FAIL(fbdev_output, TDM_ERROR_INVALID_PARAMETER);
+    RETURN_VAL_IF_FAIL(dpms_value, TDM_ERROR_INVALID_PARAMETER);
+
+    *dpms_value = fbdev_output->dpms_value;
+
     return TDM_ERROR_NONE;
 }
 
 tdm_error
 fbdev_output_set_mode(tdm_output *output, const tdm_output_mode *mode)
 {
+    tdm_fbdev_output_data *fbdev_output = (tdm_fbdev_output_data *)output;
+
+    RETURN_VAL_IF_FAIL(fbdev_output, TDM_ERROR_INVALID_PARAMETER);
+    RETURN_VAL_IF_FAIL(mode, TDM_ERROR_INVALID_PARAMETER);
+
+    /*
+     * We currently support only one mode
+     */
+    if (fbdev_output->count_modes == 1)
+        return TDM_ERROR_NONE;
+
+    /*
+     * TODO: Implement mode switching
+     */
+    fbdev_output->mode_changed = 0;
+
     return TDM_ERROR_NONE;
 }
 
 tdm_error
 fbdev_output_get_mode(tdm_output *output, const tdm_output_mode **mode)
 {
+    tdm_fbdev_output_data *fbdev_output = (tdm_fbdev_output_data *)output;
+
+    RETURN_VAL_IF_FAIL(fbdev_output, TDM_ERROR_INVALID_PARAMETER);
+    RETURN_VAL_IF_FAIL(*mode, TDM_ERROR_INVALID_PARAMETER);
+
+    *mode = fbdev_output->current_mode;
+
     return TDM_ERROR_NONE;
 }
 
@@ -619,20 +752,17 @@ fbdev_layer_set_buffer(tdm_layer *layer, tbm_surface_h buffer)
         display_buffer->height = tbm_surface_get_height(buffer);
 
         /*
-         * TODO: Have to get more correct bo's size
-         */
-        display_buffer->size = display_buffer->width * display_buffer->height;
-
-        format = tbm_surface_get_format(buffer);
-        (void)format;
-        /*
          * TODO: We have got drm format here, have to be checked whether
          *  Framebuffer device supports this format.
          *  Do we need it at all?
          */
+        format = tbm_surface_get_format(buffer);
+        (void)format;
 
         bo = tbm_surface_internal_get_bo(buffer, 0);
         bo_handle = tbm_bo_map(bo, TBM_DEVICE_CPU, opt);
+
+        display_buffer->size = tbm_bo_size(bo);
 
         /*
          * When surface will be about to be destroyed there will have been
