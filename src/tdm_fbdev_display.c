@@ -6,6 +6,8 @@
 #include <stdint.h>
 #include "tdm_fbdev.h"
 
+#include <xf86drm.h>
+
 /*
  * Framebuffer device supported formats
  */
@@ -315,7 +317,18 @@ fbdev_display_get_fd(tdm_backend_data *bdata, int *fd)
      *  since we don't know how drm file descriptor is used by software
      *  above us;
      */
-    *fd = fbdev_data->fbdev_fd;
+
+    int drm_fd = -1;
+
+    drm_fd = drmOpen("vigs", NULL);
+    if (drm_fd < 0)
+    {
+        TDM_ERR("Cannot open '%s' drm", "vigs");
+    }
+
+    TDM_INFO("OPEN DRM OK: %d", drm_fd);
+
+    *fd = drm_fd;
 
     return TDM_ERROR_NONE;
 }
