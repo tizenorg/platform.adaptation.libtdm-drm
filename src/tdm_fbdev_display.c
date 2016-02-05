@@ -6,6 +6,9 @@
 #include <stdint.h>
 #include "tdm_fbdev.h"
 
+#include <xf86drm.h>
+#include <libudev.h>
+
 /*
  * Framebuffer device supported formats
  */
@@ -73,12 +76,12 @@ _tdm_fbdev_display_cb_destroy_buffer(tbm_surface_h buffer, void *user_data)
         /*
          * TODO: Check tbm_bo_unmap return status
          */
-    tbm_bo_unmap(bo);
+        tbm_bo_unmap(bo);
 
-    TDM_DBG("unmap success");
+        TDM_DBG("unmap success");
     }
     else
-    TDM_DBG("unmap was not called");
+        TDM_DBG("unmap was not called");
 
     free(display_buffer);
 }
@@ -164,8 +167,8 @@ tdm_fbdev_creat_output(tdm_fbdev_data *fbdev_data)
         output->output_modes[i].type = -1;
 
         sprintf(output->output_modes[i].name, "%dx%d",
-                fbdev_data->vinfo->width,
-                fbdev_data->vinfo->height);
+                fbdev_data->vinfo->xres,
+                fbdev_data->vinfo->yres);
     }
 
     /*
@@ -302,6 +305,56 @@ failed_get:
     return NULL;
 }
 
+static struct udev_device*
+_tdm_find_primary_gpu(void)
+{
+    struct udev *udev;
+    struct udev_enumerate *e;
+    struct udev_list_entry *entry;
+    const char *path, *id;
+    struct udev_device *device, *drm_device, *pci;
+
+    udev = udev_new();
+    if (!udev)
+    {
+        TDM_ERR("fail to initialize udev context\n");
+        return NULL;
+    }
+
+    e = udev_enumerate_new(udev);
+    udev_enumerate_add_match_subsystem(e, "drm");
+    udev_enumerate_add_match_sysname(e, "card[0-9]*");
+
+    udev_enumerate_scan_devices(e);
+    drm_device = NULL;
+    udev_list_entry_foreach(entry, udev_enumerate_get_list_entry(e)) {
+        path = udev_list_entry_get_name(entry);
+        device = udev_device_new_from_syspath(udev, path);
+        if (!device)
+            continue;
+
+        pci = udev_device_get_parent_with_subsystem_devtype(device,
+                                "pci", NULL);
+        if (pci) {
+            id = udev_device_get_sysattr_value(pci, "boot_vga");
+            if (id && !strcmp(id, "1")) {
+                if (drm_device)
+                    udev_device_unref(drm_device);
+                drm_device = device;
+                break;
+            }
+        }
+
+        if (!drm_device)
+            drm_device = device;
+        else
+            udev_device_unref(device);
+    }
+
+    udev_enumerate_unref(e);
+    return drm_device;
+}
+
 tdm_error
 fbdev_display_get_fd(tdm_backend_data *bdata, int *fd)
 {
@@ -310,13 +363,45 @@ fbdev_display_get_fd(tdm_backend_data *bdata, int *fd)
     RETURN_VAL_IF_FAIL(fbdev_data, TDM_ERROR_INVALID_PARAMETER);
     RETURN_VAL_IF_FAIL(fd, TDM_ERROR_INVALID_PARAMETER);
 
-    /*
-     * TODO: Shloud we implement this call, because it is tricky place
-     *  since we don't know how drm file descriptor is used by software
-     *  above us;
-     */
-    *fd = fbdev_data->fbdev_fd;
+    int drm_fd = -1;
 
+    /*
+     * TODO: Temp code. Open drm device for novice test utility, It needs
+     *  it to open and using tbm buffer manger
+     */
+    drm_fd = drmOpen("/dev/card0", NULL);
+    if (drm_fd < 0)
+    {
+        TDM_ERR("Cannot open '%s' drm", "/dev/card0");
+    }
+
+    if (drm_fd < 0)
+     {
+         struct udev_device *drm_device = NULL;
+         const char *filename;
+         TDM_WRN("Cannot open drm device.. search by udev");
+
+         drm_device = _tdm_find_primary_gpu();
+         if (drm_device == NULL)
+         {
+             TDM_ERR("fail to find drm device\n");
+             goto close_l;
+         }
+
+         filename = udev_device_get_devnode(drm_device);
+
+         drm_fd = open(filename, O_RDWR | O_CLOEXEC);
+         if (drm_fd < 0)
+             TDM_ERR("Cannot open drm device(%s)\n", filename);
+
+         TDM_DBG("open drm device (name:%s, fd:%d)", filename, fd);
+
+         udev_device_unref(drm_device);
+     }
+
+    *fd = drm_fd;
+
+close_l:
     return TDM_ERROR_NONE;
 }
 
@@ -484,7 +569,7 @@ fbdev_output_commit(tdm_output *output, int sync, void *user_data)
     /*
      * Display buffer's content to screen
      */
-    memcpy(fbdev_output->mem, display_buffer->mem, sizeof(display_buffer->size) );
+    memcpy(fbdev_output->mem, display_buffer->mem, display_buffer->size * sizeof(char) );
 
     return TDM_ERROR_NONE;
 }
