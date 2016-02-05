@@ -2,10 +2,6 @@
 #include "config.h"
 #endif
 
-#if HAVE_UDEV
-#include <libudev.h>
-#endif
-
 #include "tdm_fbdev.h"
 
 #include <tdm_helper.h>
@@ -250,7 +246,7 @@ tdm_fbdev_init(tdm_display *dpy, tdm_error *error)
         return NULL;
     }
 
-    fbdev_data = calloc(1, sizeof(fbdev_data));
+    fbdev_data = calloc(1, sizeof(struct _tdm_fbdev_data));
     if (!fbdev_data)
     {
         TDM_ERR("alloc failed");
