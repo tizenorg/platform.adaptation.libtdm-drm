@@ -139,6 +139,9 @@ tdm_fbdev_creat_output(tdm_fbdev_data *fbdev_data)
     output->status = TDM_OUTPUT_CONN_STATUS_CONNECTED;
     output->connector_type = TDM_OUTPUT_TYPE_LVDS;
 
+    output->is_vblank = DOWN;
+    output->is_commit = DOWN;
+
     /*
      * TODO: connector_type_id field relates to libdrm connector which framebuffer
      *  does not know. It have to be checked whether softaware above us use this
@@ -190,9 +193,6 @@ tdm_fbdev_destroy_output(tdm_fbdev_data *fbdev_data)
 
     if (fbdev_output == NULL)
         goto close;
-
-    free(fbdev_data->vinfo);
-    free(fbdev_data->finfo);
 
     if (fbdev_output->mem == NULL)
         goto close_2;
@@ -408,9 +408,50 @@ close_l:
 tdm_error
 fbdev_display_handle_events(tdm_backend_data *bdata)
 {
+    tdm_fbdev_data *fbdev_data = (tdm_fbdev_data *) bdata;
+    void *user_data;
+    tdm_fbdev_output_data *fbdev_output;
+    unsigned int sequence = 0;
+    unsigned int tv_sec = 0;
+    unsigned int tv_usec = 0;
+
+    RETURN_VAL_IF_FAIL(fbdev_data, TDM_ERROR_INVALID_PARAMETER);
+
+    fbdev_output = fbdev_data->fbdev_output;
+    user_data = fbdev_output->user_data;
+
+    RETURN_VAL_IF_FAIL(user_data, TDM_ERROR_INVALID_PARAMETER);
+
+    /*
+    (tdm_output *output, unsigned int sequence,
+     unsigned int tv_sec, unsigned int tv_usec,
+     void *user_data);
+    */
+
     /*
      * Framebuffer does not produce events
+     * Fake flags are used to simulate event-operated back end. Since tdm
+     *  library assumes its back ends to be event-operated and Framebuffer
+     *  device is not event-operated we have to make fake events
      */
+    if (fbdev_output->is_vblank && fbdev_output->vblank_func)
+    {
+        fbdev_output->is_vblank = DOWN;
+
+        fbdev_output->vblank_func((tdm_output *)fbdev_data,
+                                   sequence, tv_sec,
+                                   tv_usec, user_data);
+    }
+
+    if (fbdev_output->is_commit && fbdev_output->commit_func)
+    {
+        fbdev_output->is_commit = DOWN;
+
+        fbdev_output->commit_func((tdm_output *)fbdev_data,
+                                   sequence, tv_sec,
+                                   tv_usec, user_data);
+    }
+
     return TDM_ERROR_NONE;
 }
 
@@ -528,7 +569,39 @@ fbdev_output_get_property(tdm_output *output, unsigned int id, tdm_value *value)
 tdm_error
 fbdev_output_wait_vblank(tdm_output *output, int interval, int sync, void *user_data)
 {
+    tdm_fbdev_output_data *fbdev_output = (tdm_fbdev_output_data *)output;
+    tdm_fbdev_data *fbdev_data;
 
+    int crtc = 0;
+    int ret;
+
+    RETURN_VAL_IF_FAIL(fbdev_output, TDM_ERROR_INVALID_PARAMETER);
+
+    /*
+     * Frame buffer device does not support asynchronous events, that is
+     *  why clients must get responsibility on handling asynchronous
+     *  events.
+     */
+    if (!sync)
+    {
+        TDM_WRN("Framebuffer back end does not support asynchronous vblank");
+        return TDM_ERROR_NONE;
+    }
+
+    fbdev_data = fbdev_output->fbdev_data;
+
+    ret = ioctl(fbdev_data->fbdev_fd, FBIO_WAITFORVSYNC, &crtc);
+    if (ret < 0)
+    {
+        TDM_ERR("FBIO_WAITFORVSYNC ioctl failed, errno=%d", errno);
+        return TDM_ERROR_OPERATION_FAILED;
+    }
+
+    /*
+     * Up fake flag to simulate vsync event
+     */
+    fbdev_output->is_vblank = UP;
+    fbdev_output->user_data = user_data;
 
     return TDM_ERROR_NONE;
 }
@@ -571,6 +644,13 @@ fbdev_output_commit(tdm_output *output, int sync, void *user_data)
      */
     memcpy(fbdev_output->mem, display_buffer->mem, display_buffer->size * sizeof(char) );
 
+
+    /*
+     * Up fake flag to simulate page flip event
+     */
+    fbdev_output->is_commit = UP;
+    fbdev_output->user_data = user_data;
+
     return TDM_ERROR_NONE;
 }
 
@@ -592,6 +672,7 @@ fbdev_output_set_dpms(tdm_output *output, tdm_output_dpms dpms_value)
 {
     tdm_fbdev_output_data *fbdev_output = (tdm_fbdev_output_data *)output;
     tdm_fbdev_data *fbdev_data;
+    int fbmode = 0;
     int ret;
 
     RETURN_VAL_IF_FAIL(fbdev_output, TDM_ERROR_INVALID_PARAMETER);
@@ -607,29 +688,19 @@ fbdev_output_set_dpms(tdm_output *output, tdm_output_dpms dpms_value)
     switch (dpms_value)
     {
         case TDM_OUTPUT_DPMS_ON:
-
-            ret = ioctl(fbdev_data->fbdev_fd, FBIOBLANK, FB_BLANK_UNBLANK);
-            if (ret < 0)
-            {
-                TDM_ERR("FBIOBLANK UNBLANK ioctl failed, errno=%d", errno);
-                return TDM_ERROR_OPERATION_FAILED;
-            }
-
+            fbmode = FB_BLANK_UNBLANK;
             break;
 
         case TDM_OUTPUT_DPMS_OFF:
-
-            ret = ioctl(fbdev_data->fbdev_fd, FBIOBLANK, FB_BLANK_POWERDOWN);
-            if (ret < 0)
-            {
-                TDM_ERR("FBIOBLANK POWERDOWN ioctl failed, errno=%d", errno);
-                return TDM_ERROR_OPERATION_FAILED;
-            }
-
+            fbmode = FB_BLANK_POWERDOWN;
             break;
 
         case TDM_OUTPUT_DPMS_STANDBY:
+            fbmode = FB_BLANK_VSYNC_SUSPEND;
+            break;
+
         case TDM_OUTPUT_DPMS_SUSPEND:
+            fbmode = FB_BLANK_HSYNC_SUSPEND;
             break;
 
         default:
@@ -637,7 +708,15 @@ fbdev_output_set_dpms(tdm_output *output, tdm_output_dpms dpms_value)
             break;
     }
 
+    ret = ioctl(fbdev_data->fbdev_fd, FBIOBLANK, (void *)fbmode);
+    if (ret < 0)
+    {
+        TDM_ERR("FBIOBLANK ioctl failed, errno=%d", errno);
+        return TDM_ERROR_OPERATION_FAILED;
+    }
+
     fbdev_output->dpms_value = dpms_value;
+    fbmode = 0;
 
     return TDM_ERROR_NONE;
 }

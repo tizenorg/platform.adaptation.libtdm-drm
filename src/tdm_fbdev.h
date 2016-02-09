@@ -101,7 +101,7 @@ struct _tdm_fbdev_output_data
     int mode_changed;
 
     /*
-     * We currently support only one mode
+     * Frambuffer device back end currently support only one mode
      */
     const tdm_output_mode *current_mode;
 
@@ -116,6 +116,16 @@ struct _tdm_fbdev_output_data
      */
     tdm_output_vblank_handler vblank_func;
     tdm_output_commit_handler commit_func;
+
+    void *user_data;
+
+    /*
+     * Fake flags are used to simulate event-operated back end. Since tdm
+     *  library assumes its back ends to be event-operated and Framebuffer
+     *  device is not event-operated we have to make fake events
+     */
+    int is_vblank;
+    int is_commit;
 };
 
 struct _tdm_fbdev_layer_data
@@ -129,6 +139,12 @@ struct _tdm_fbdev_layer_data
     tdm_layer_capability capabilities;
     tdm_info_layer info;
     int info_changed;
+};
+
+enum
+{
+    DOWN = 0,
+    UP,
 };
 
 struct _tdm_fbdev_display_buffer
