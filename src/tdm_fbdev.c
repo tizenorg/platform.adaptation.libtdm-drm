@@ -127,6 +127,9 @@ _tdm_fbdev_init_internal(void)
      *    +-------------+     |     +-------------+     |      +-------------+
      *                        |                         |
      */
+    /*
+     * TODO: Implement off screen rendering
+     */
     vinfo->yres_virtual = vinfo->yres * MAX_BUF;
 
     ret = ioctl(fbdev_data->fbdev_fd, FBIOPAN_DISPLAY, vinfo);
@@ -221,6 +224,12 @@ tdm_fbdev_deinit(tdm_backend_data *bdata)
 
     tdm_fbdev_destroy_layer(fbdev_data);
     tdm_fbdev_destroy_output(fbdev_data);
+
+    if (fbdev_data->vinfo)
+        free(fbdev_data->vinfo);
+
+    if (fbdev_data->finfo)
+        free(fbdev_data->finfo);
 
     free(fbdev_data);
     fbdev_data = NULL;
