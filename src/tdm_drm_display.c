@@ -10,14 +10,14 @@
 
 typedef struct _tdm_drm_output_data tdm_drm_output_data;
 typedef struct _tdm_drm_layer_data tdm_drm_layer_data;
-typedef struct _tdm_drm_vblank_data tdm_drm_vblank_data;
+typedef struct _tdm_drm_event_data tdm_drm_event_data;
 
 typedef enum
 {
-    VBLANK_TYPE_WAIT,
-    VBLANK_TYPE_COMMIT,
-    VBLANK_TYPE_PAGEFLIP,
-} vblank_type;
+    TDM_DRM_EVENT_TYPE_WAIT,
+    TDM_DRM_EVENT_TYPE_COMMIT,
+    TDM_DRM_EVENT_TYPE_PAGEFLIP,
+} tdm_drm_event_type;
 
 typedef struct _tdm_drm_display_buffer
 {
@@ -28,9 +28,9 @@ typedef struct _tdm_drm_display_buffer
     int width;
 } tdm_drm_display_buffer;
 
-struct _tdm_drm_vblank_data
+struct _tdm_drm_event_data
 {
-    vblank_type type;
+    tdm_drm_event_type type;
     tdm_drm_output_data *output_data;
     void *user_data;
 };
@@ -62,8 +62,6 @@ struct _tdm_drm_output_data
 
     int mode_changed;
     const tdm_output_mode *current_mode;
-
-    int waiting_vblank_event;
 };
 
 struct _tdm_drm_layer_data
@@ -84,15 +82,6 @@ struct _tdm_drm_layer_data
     tdm_drm_display_buffer *display_buffer;
     int display_buffer_changed;
 };
-
-typedef struct _Drm_Event_Context
-{
-    void (*pageflip_handler)(int fd, unsigned int sequence, unsigned int tv_sec,
-                           unsigned int tv_usec, void *user_data);
-
-    void (*vblank_handler)(int fd, unsigned int sequence, unsigned int tv_sec,
-                           unsigned int tv_usec, void *user_data);
-} Drm_Event_Context;
 
 static drmModeModeInfoPtr
 _tdm_drm_display_get_mode(tdm_drm_output_data *output_data)
@@ -244,19 +233,19 @@ _tdm_drm_display_commit_primary_layer(tdm_drm_layer_data *layer_data, void *user
         }
         else
         {
-            tdm_drm_vblank_data *vblank_data = calloc(1, sizeof(tdm_drm_vblank_data));
+            tdm_drm_event_data *event_data = calloc(1, sizeof(tdm_drm_event_data));
 
-            if (!vblank_data)
+            if (!event_data)
             {
                 TDM_ERR("alloc failed");
                 return TDM_ERROR_OUT_OF_MEMORY;
             }
 
-            vblank_data->type = VBLANK_TYPE_PAGEFLIP;
-            vblank_data->output_data = output_data;
-            vblank_data->user_data = user_data;
+            event_data->type = TDM_DRM_EVENT_TYPE_PAGEFLIP;
+            event_data->output_data = output_data;
+            event_data->user_data = user_data;
             if (drmModePageFlip(drm_data->drm_fd, output_data->crtc_id,
-                                layer_data->display_buffer->fb_id, DRM_MODE_PAGE_FLIP_EVENT, vblank_data))
+                                layer_data->display_buffer->fb_id, DRM_MODE_PAGE_FLIP_EVENT, event_data))
             {
                 TDM_ERR("pageflip failed: %m");
                 return TDM_ERROR_OPERATION_FAILED;
@@ -329,136 +318,40 @@ _tdm_drm_display_commit_layer(tdm_drm_layer_data *layer_data)
 }
 
 static void
-_tdm_drm_display_cb_vblank(int fd, unsigned int sequence,
-                              unsigned int tv_sec, unsigned int tv_usec,
-                              void *user_data)
+_tdm_drm_display_cb_event(int fd, unsigned int sequence,
+                          unsigned int tv_sec, unsigned int tv_usec,
+                          void *user_data)
 {
-    tdm_drm_vblank_data *vblank_data = user_data;
+    tdm_drm_event_data *event_data = user_data;
     tdm_drm_output_data *output_data;
 
-    if (!vblank_data)
+    if (!event_data)
     {
-        TDM_ERR("no vblank data");
+        TDM_ERR("no event data");
         return;
     }
 
-    output_data = vblank_data->output_data;
+    output_data = event_data->output_data;
 
-    switch(vblank_data->type)
+    switch(event_data->type)
     {
-    case VBLANK_TYPE_WAIT:
+    case TDM_DRM_EVENT_TYPE_PAGEFLIP:
+        if (output_data->commit_func)
+            output_data->commit_func(output_data, sequence, tv_sec, tv_usec, event_data->user_data);
+        break;
+    case TDM_DRM_EVENT_TYPE_WAIT:
         if (output_data->vblank_func)
-            output_data->vblank_func(output_data, sequence, tv_sec, tv_usec, vblank_data->user_data);
+            output_data->vblank_func(output_data, sequence, tv_sec, tv_usec, event_data->user_data);
         break;
-    case VBLANK_TYPE_COMMIT:
+    case TDM_DRM_EVENT_TYPE_COMMIT:
         if (output_data->commit_func)
-            output_data->commit_func(output_data, sequence, tv_sec, tv_usec, vblank_data->user_data);
+            output_data->commit_func(output_data, sequence, tv_sec, tv_usec, event_data->user_data);
         break;
     default:
         break;
     }
-	free(vblank_data);
-}
 
-static void
-_tdm_drm_display_cb_pageflip(int fd, unsigned int sequence,
-                              unsigned int tv_sec, unsigned int tv_usec,
-                              void *user_data)
-{
-    tdm_drm_vblank_data *vblank_data = user_data;
-    tdm_drm_output_data *output_data;
-
-    if (!vblank_data)
-    {
-        TDM_ERR("no vblank data");
-        return;
-    }
-
-    output_data = vblank_data->output_data;
-
-    switch(vblank_data->type)
-    {
-    case VBLANK_TYPE_PAGEFLIP:
-        if (output_data->commit_func)
-            output_data->commit_func(output_data, sequence, tv_sec, tv_usec, vblank_data->user_data);
-        break;
-    default:
-        break;
-    }
-	free(vblank_data);
-}
-
-static int
-_tdm_drm_display_events_handle(int fd, Drm_Event_Context *evctx)
-{
-#define MAX_BUF_SIZE    1024
-
-    char buffer[MAX_BUF_SIZE];
-    unsigned int len, i;
-    struct drm_event *e;
-
-    /* The DRM read semantics guarantees that we always get only
-     * complete events. */
-    len = read(fd, buffer, sizeof buffer);
-    if (len == 0)
-    {
-        TDM_WRN("warning: the size of the drm_event is 0.");
-        return 0;
-    }
-    if (len < sizeof *e)
-    {
-        TDM_WRN("warning: the size of the drm_event is less than drm_event structure.");
-        return -1;
-    }
-    if (len > MAX_BUF_SIZE)
-    {
-        TDM_WRN("warning: the size of the drm_event can be over the maximum size.");
-        return -1;
-    }
-
-    i = 0;
-    while (i < len)
-    {
-        e = (struct drm_event *) &buffer[i];
-        switch (e->type)
-        {
-            case DRM_EVENT_VBLANK:
-                {
-                    struct drm_event_vblank *vblank;
-
-                    if (evctx->vblank_handler == NULL)
-                        break;
-
-                    vblank = (struct drm_event_vblank *)e;
-                    TDM_DBG("******* VBLANK *******");
-                    evctx->vblank_handler (fd, vblank->sequence,
-                                           vblank->tv_sec, vblank->tv_usec,
-                                           (void *)((unsigned long)vblank->user_data));
-                    TDM_DBG("******* VBLANK *******...");
-                }
-                break;
-            case DRM_EVENT_FLIP_COMPLETE:
-                {
-                    struct drm_event_vblank *vblank;
-
-                    if (evctx->pageflip_handler == NULL)
-                        break;
-
-                    vblank = (struct drm_event_vblank *)e;
-                    TDM_DBG("******* PAGEFLIP *******");
-                    evctx->pageflip_handler (fd, vblank->sequence,
-                                           vblank->tv_sec, vblank->tv_usec,
-                                           (void *)((unsigned long)vblank->user_data));
-                    TDM_DBG("******* PAGEFLIP *******...");
-                }
-                break;
-            default:
-                break;
-        }
-        i += e->length;
-    }
-
-    return 0;
+    free(event_data);
 }
 
 static tdm_error
@@ -868,16 +761,17 @@ tdm_error
 drm_display_handle_events(tdm_backend_data *bdata)
 {
     tdm_drm_data *drm_data = bdata;
-    Drm_Event_Context ctx;
+    drmEventContext ctx;
 
     RETURN_VAL_IF_FAIL(drm_data, TDM_ERROR_INVALID_PARAMETER);
 
-    memset(&ctx, 0, sizeof(Drm_Event_Context));
+    memset(&ctx, 0, sizeof(drmEventContext));
 
-    ctx.pageflip_handler = _tdm_drm_display_cb_pageflip;
-    ctx.vblank_handler = _tdm_drm_display_cb_vblank;
+    ctx.version = DRM_EVENT_CONTEXT_VERSION;
+    ctx.page_flip_handler = _tdm_drm_display_cb_event;
+    ctx.vblank_handler = _tdm_drm_display_cb_event;
 
-    _tdm_drm_display_events_handle(drm_data->drm_fd, &ctx);
+    drmHandleEvent(drm_data->drm_fd, &ctx);
 
     return TDM_ERROR_NONE;
 }
@@ -1084,14 +978,14 @@ drm_output_wait_vblank(tdm_output *output, int interval, int sync, void *user_da
 {
     tdm_drm_output_data *output_data = output;
     tdm_drm_data *drm_data;
-    tdm_drm_vblank_data *vblank_data;
+    tdm_drm_event_data *event_data;
     uint target_msc;
     tdm_error ret;
 
     RETURN_VAL_IF_FAIL(output_data, TDM_ERROR_INVALID_PARAMETER);
 
-    vblank_data = calloc(1, sizeof(tdm_drm_vblank_data));
-    if (!vblank_data)
+    event_data = calloc(1, sizeof(tdm_drm_event_data));
+    if (!event_data)
     {
         TDM_ERR("alloc failed");
         return TDM_ERROR_OUT_OF_MEMORY;
@@ -1105,17 +999,17 @@ drm_output_wait_vblank(tdm_output *output, int interval, int sync, void *user_da
 
     target_msc++;
 
-    vblank_data->type = VBLANK_TYPE_WAIT;
-    vblank_data->output_data = output_data;
-    vblank_data->user_data = user_data;
+    event_data->type = TDM_DRM_EVENT_TYPE_WAIT;
+    event_data->output_data = output_data;
+    event_data->user_data = user_data;
 
-    ret = _tdm_drm_display_wait_vblank(drm_data->drm_fd, output_data->pipe, &target_msc, vblank_data);
+    ret = _tdm_drm_display_wait_vblank(drm_data->drm_fd, output_data->pipe, &target_msc, event_data);
     if (ret != TDM_ERROR_NONE)
         goto failed_vblank;
 
     return TDM_ERROR_NONE;
 failed_vblank:
-    free(vblank_data);
+    free(event_data);
     return ret;
 }
 
@@ -1168,10 +1062,10 @@ drm_output_commit(tdm_output *output, int sync, void *user_data)
      */
     if ((tdm_helper_drm_fd == -1) && (do_waitvblank == 1))
     {
-        tdm_drm_vblank_data *vblank_data = calloc(1, sizeof(tdm_drm_vblank_data));
+        tdm_drm_event_data *event_data = calloc(1, sizeof(tdm_drm_event_data));
         uint target_msc;
 
-        if (!vblank_data)
+        if (!event_data)
         {
             TDM_ERR("alloc failed");
             return TDM_ERROR_OUT_OF_MEMORY;
@@ -1180,20 +1074,20 @@ drm_output_commit(tdm_output *output, int sync, void *user_data)
         ret = _tdm_drm_display_get_cur_msc(drm_data->drm_fd, output_data->pipe, &target_msc);
         if (ret != TDM_ERROR_NONE)
         {
-            free(vblank_data);
+            free(event_data);
             return ret;
         }
 
         target_msc++;
 
-        vblank_data->type = VBLANK_TYPE_COMMIT;
-        vblank_data->output_data = output_data;
-        vblank_data->user_data = user_data;
+        event_data->type = TDM_DRM_EVENT_TYPE_COMMIT;
+        event_data->output_data = output_data;
+        event_data->user_data = user_data;
 
-        ret = _tdm_drm_display_wait_vblank(drm_data->drm_fd, output_data->pipe, &target_msc, vblank_data);
+        ret = _tdm_drm_display_wait_vblank(drm_data->drm_fd, output_data->pipe, &target_msc, event_data);
         if (ret != TDM_ERROR_NONE)
         {
-            free(vblank_data);
+            free(event_data);
             return ret;
         }
     }
