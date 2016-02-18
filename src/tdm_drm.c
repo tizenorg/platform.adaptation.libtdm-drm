@@ -20,6 +20,10 @@ static tdm_func_display drm_func_display =
     drm_display_get_fd,
     drm_display_handle_events,
     NULL,  //display_create_pp,
+};
+
+static tdm_func_output drm_func_output =
+{
     drm_output_get_capability,
     drm_output_get_layers,
     drm_output_set_property,
@@ -33,6 +37,10 @@ static tdm_func_display drm_func_display =
     drm_output_set_mode,
     drm_output_get_mode,
     NULL,   //output_create_capture
+};
+
+static tdm_func_layer drm_func_layer =
+{
     drm_layer_get_capability,
     drm_layer_set_property,
     drm_layer_get_property,
@@ -193,6 +201,14 @@ tdm_drm_init(tdm_display *dpy, tdm_error *error)
     LIST_INITHEAD(&drm_data->buffer_list);
 
     ret = tdm_backend_register_func_display(dpy, &drm_func_display);
+    if (ret != TDM_ERROR_NONE)
+        goto failed;
+
+    ret = tdm_backend_register_func_output(dpy, &drm_func_output);
+    if (ret != TDM_ERROR_NONE)
+        goto failed;
+
+    ret = tdm_backend_register_func_layer(dpy, &drm_func_layer);
     if (ret != TDM_ERROR_NONE)
         goto failed;
 
