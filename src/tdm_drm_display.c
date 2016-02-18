@@ -1068,12 +1068,7 @@ drm_output_commit(tdm_output *output, int sync, void *user_data)
         }
     }
 
-    /* TODO: tdm_helper_drm_fd is external drm_fd which is opened by ecore_drm.
-     * This is very tricky. But we can't remove tdm_helper_drm_fd now because
-     * ecore_drm doesn't use tdm yet. When we make ecore_drm use tdm,
-     * tdm_helper_drm_fd will be removed.
-     */
-    if ((tdm_helper_drm_fd == -1) && (do_waitvblank == 1))
+    if (do_waitvblank == 1)
     {
         tdm_drm_event_data *event_data = calloc(1, sizeof(tdm_drm_event_data));
         uint target_msc;
