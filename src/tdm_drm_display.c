@@ -97,9 +97,9 @@ _tdm_drm_display_get_mode(tdm_drm_output_data *output_data)
     for (i = 0; i < output_data->count_modes; i++)
     {
         drmModeModeInfoPtr drm_mode = &output_data->drm_modes[i];
-        if ((drm_mode->hdisplay == output_data->current_mode->width) &&
-            (drm_mode->vdisplay == output_data->current_mode->height) &&
-            (drm_mode->vrefresh == output_data->current_mode->refresh) &&
+        if ((drm_mode->hdisplay == output_data->current_mode->hdisplay) &&
+            (drm_mode->vdisplay == output_data->current_mode->vdisplay) &&
+            (drm_mode->vrefresh == output_data->current_mode->vrefresh) &&
             (drm_mode->flags == output_data->current_mode->flags) &&
             (drm_mode->type == output_data->current_mode->type) &&
             !(strncmp(drm_mode->name, output_data->current_mode->name, TDM_NAME_LEN)))
@@ -126,9 +126,18 @@ _tdm_drm_display_find_buffer(tdm_drm_data *drm_data, tbm_surface_h buffer)
 static void
 _tdm_drm_display_to_tdm_mode(drmModeModeInfoPtr drm_mode, tdm_output_mode *tdm_mode)
 {
-    tdm_mode->width = drm_mode->hdisplay;
-    tdm_mode->height = drm_mode->vdisplay;
-    tdm_mode->refresh = drm_mode->vrefresh;
+    tdm_mode->clock = drm_mode->clock;
+    tdm_mode->hdisplay = drm_mode->hdisplay;
+    tdm_mode->hsync_start = drm_mode->hsync_start;
+    tdm_mode->hsync_end = drm_mode->hsync_end;
+    tdm_mode->htotal = drm_mode->htotal;
+    tdm_mode->hskew = drm_mode->hskew;
+    tdm_mode->vdisplay = drm_mode->vdisplay;
+    tdm_mode->vsync_start = drm_mode->vsync_start;
+    tdm_mode->vsync_end = drm_mode->vsync_end;
+    tdm_mode->vtotal = drm_mode->vtotal;
+    tdm_mode->vscan = drm_mode->vscan;
+    tdm_mode->vrefresh = drm_mode->vrefresh;
     tdm_mode->flags = drm_mode->flags;
     tdm_mode->type = drm_mode->type;
     snprintf(tdm_mode->name, TDM_NAME_LEN, "%s", drm_mode->name);
@@ -269,7 +278,7 @@ _tdm_drm_display_commit_layer(tdm_drm_layer_data *layer_data)
         return TDM_ERROR_NONE;
 
     if (output_data->current_mode)
-        crtc_w = output_data->current_mode->width;
+        crtc_w = output_data->current_mode->hdisplay;
     else
     {
         drmModeCrtcPtr crtc = drmModeGetCrtc(drm_data->drm_fd, output_data->crtc_id);
