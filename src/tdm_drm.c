@@ -18,6 +18,7 @@ static tdm_func_display drm_func_display =
     NULL,  //display_get_capture_capability
     drm_display_get_outputs,
     drm_display_get_fd,
+    drm_display_get_fd,
     drm_display_handle_events,
     NULL,  //display_create_pp,
 };
