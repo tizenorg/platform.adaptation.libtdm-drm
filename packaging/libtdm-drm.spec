@@ -9,6 +9,7 @@ Source1001:	    %{name}.manifest
 BuildRequires: pkgconfig(libdrm)
 BuildRequires: pkgconfig(libudev)
 BuildRequires: pkgconfig(libtdm)
+BuildRequires: pkgconfig(pixman-1)
 
 %description
 Back-End library of Tizen Display Manager DRM : libtdm-mgr DRM library

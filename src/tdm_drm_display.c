@@ -4,7 +4,9 @@
 
 #include <drm_fourcc.h>
 #include <tdm_helper.h>
+
 #include "tdm_drm.h"
+#include "tdm_drm_pp.h"
 
 #define MIN_WIDTH   32
 
@@ -707,6 +709,12 @@ drm_display_get_capabilitiy(tdm_backend_data *bdata, tdm_caps_display *caps)
     return TDM_ERROR_NONE;
 }
 
+tdm_error
+drm_display_get_pp_capability(tdm_backend_data *bdata, tdm_caps_pp *caps)
+{
+    return tdm_drm_pp_get_capability(bdata, caps);
+}
+
 tdm_output**
 drm_display_get_outputs(tdm_backend_data *bdata, int *count, tdm_error *error)
 {
@@ -783,6 +791,16 @@ drm_display_handle_events(tdm_backend_data *bdata)
     drmHandleEvent(drm_data->drm_fd, &ctx);
 
     return TDM_ERROR_NONE;
+}
+
+tdm_pp*
+drm_display_create_pp(tdm_backend_data *bdata, tdm_error *error)
+{
+    tdm_drm_data *drm_data = bdata;
+
+    RETURN_VAL_IF_FAIL(drm_data, NULL);
+
+    return tdm_drm_pp_create(drm_data, error);
 }
 
 tdm_error

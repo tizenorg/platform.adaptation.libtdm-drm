@@ -53,6 +53,15 @@ static tdm_func_layer drm_func_layer =
     NULL,    //layer_create_capture
 };
 
+static tdm_func_pp drm_func_pp =
+{
+    drm_pp_destroy,
+    drm_pp_set_info,
+    drm_pp_attach,
+    drm_pp_commit,
+    drm_pp_set_done_handler,
+};
+
 static tdm_drm_data *drm_data;
 
 #ifdef HAVE_UDEV
@@ -210,6 +219,10 @@ tdm_drm_init(tdm_display *dpy, tdm_error *error)
         goto failed;
 
     ret = tdm_backend_register_func_layer(dpy, &drm_func_layer);
+    if (ret != TDM_ERROR_NONE)
+        goto failed;
+
+    ret = tdm_backend_register_func_pp(dpy, &drm_func_pp);
     if (ret != TDM_ERROR_NONE)
         goto failed;
 

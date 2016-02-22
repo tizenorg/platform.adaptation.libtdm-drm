@@ -23,6 +23,7 @@
 
 /* drm backend functions (display) */
 tdm_error    drm_display_get_capabilitiy(tdm_backend_data *bdata, tdm_caps_display *caps);
+tdm_error    drm_display_get_pp_capability(tdm_backend_data *bdata, tdm_caps_pp *caps);
 tdm_output** drm_display_get_outputs(tdm_backend_data *bdata, int *count, tdm_error *error);
 tdm_error    drm_display_get_fd(tdm_backend_data *bdata, int *fd);
 tdm_error    drm_display_handle_events(tdm_backend_data *bdata);
@@ -46,6 +47,11 @@ tdm_error    drm_layer_set_info(tdm_layer *layer, tdm_info_layer *info);
 tdm_error    drm_layer_get_info(tdm_layer *layer, tdm_info_layer *info);
 tdm_error    drm_layer_set_buffer(tdm_layer *layer, tbm_surface_h buffer);
 tdm_error    drm_layer_unset_buffer(tdm_layer *layer);
+void         drm_pp_destroy(tdm_pp *pp);
+tdm_error    drm_pp_set_info(tdm_pp *pp, tdm_info_pp *info);
+tdm_error    drm_pp_attach(tdm_pp *pp, tbm_surface_h src, tbm_surface_h dst);
+tdm_error    drm_pp_commit(tdm_pp *pp);
+tdm_error    drm_pp_set_done_handler(tdm_pp *pp, tdm_pp_done_handler func, void *user_data);
 
 /* drm module internal macros, structures, functions */
 #define NEVER_GET_HERE() TDM_ERR("** NEVER GET HERE **")
@@ -75,6 +81,13 @@ tdm_error    drm_layer_unset_buffer(tdm_layer *layer);
     if (!(cond)) {\
         TDM_ERR("'%s' failed", #cond);\
         return val;\
+    }\
+}
+
+#define GOTO_IF_FAIL(cond, val) {\
+    if (!(cond)) {\
+        TDM_ERR("'%s' failed", #cond);\
+        goto val;\
     }\
 }
 
