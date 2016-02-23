@@ -14,12 +14,9 @@
  */
 static tbm_format supported_formats[] =
 {
-/*
-    TBM_FORMAT_XRGB8888,
-    TBM_FORMAT_XBGR8888,
-    TBM_FORMAT_RGBX8888,
-    TBM_FORMAT_BGRX8888,
-*/
+    /*
+     * TODO: add support of 16 bit formats
+     */
     TBM_FORMAT_ARGB8888,
     TBM_FORMAT_ABGR8888,
     TBM_FORMAT_RGBA8888,
@@ -149,10 +146,6 @@ tdm_fbdev_creat_output(tdm_fbdev_data *fbdev_data)
      */
     output->connector_type_id = 1;
 
-    /*
-     * TODO: Check does Framebuffer support multiple modes and
-     *  switching between them?
-     */
     output->count_modes = 1;
     output->output_modes = calloc(output->count_modes, sizeof(tdm_output_mode));
     if (!output->output_modes)
@@ -163,9 +156,9 @@ tdm_fbdev_creat_output(tdm_fbdev_data *fbdev_data)
 
     for(i = 0; i < output->count_modes ; i++)
     {
-        output->output_modes[i].width = fbdev_data->vinfo->xres;
-        output->output_modes[i].height = fbdev_data->vinfo->yres;
-        output->output_modes[i].refresh = 60;
+        output->output_modes[i].hdisplay = fbdev_data->vinfo->xres;
+        output->output_modes[i].vdisplay = fbdev_data->vinfo->yres;
+        output->output_modes[i].vrefresh = 60;
         output->output_modes[i].flags = -1;
         output->output_modes[i].type = -1;
 
@@ -305,103 +298,51 @@ failed_get:
     return NULL;
 }
 
-static struct udev_device*
-_tdm_find_primary_gpu(void)
-{
-    struct udev *udev;
-    struct udev_enumerate *e;
-    struct udev_list_entry *entry;
-    const char *path, *id;
-    struct udev_device *device, *drm_device, *pci;
-
-    udev = udev_new();
-    if (!udev)
-    {
-        TDM_ERR("fail to initialize udev context\n");
-        return NULL;
-    }
-
-    e = udev_enumerate_new(udev);
-    udev_enumerate_add_match_subsystem(e, "drm");
-    udev_enumerate_add_match_sysname(e, "card[0-9]*");
-
-    udev_enumerate_scan_devices(e);
-    drm_device = NULL;
-    udev_list_entry_foreach(entry, udev_enumerate_get_list_entry(e)) {
-        path = udev_list_entry_get_name(entry);
-        device = udev_device_new_from_syspath(udev, path);
-        if (!device)
-            continue;
-
-        pci = udev_device_get_parent_with_subsystem_devtype(device,
-                                "pci", NULL);
-        if (pci) {
-            id = udev_device_get_sysattr_value(pci, "boot_vga");
-            if (id && !strcmp(id, "1")) {
-                if (drm_device)
-                    udev_device_unref(drm_device);
-                drm_device = device;
-                break;
-            }
-        }
-
-        if (!drm_device)
-            drm_device = device;
-        else
-            udev_device_unref(device);
-    }
-
-    udev_enumerate_unref(e);
-    return drm_device;
-}
-
 tdm_error
 fbdev_display_get_fd(tdm_backend_data *bdata, int *fd)
 {
     tdm_fbdev_data *fbdev_data = (tdm_fbdev_data *)bdata;
+    int file_fd;
 
     RETURN_VAL_IF_FAIL(fbdev_data, TDM_ERROR_INVALID_PARAMETER);
     RETURN_VAL_IF_FAIL(fd, TDM_ERROR_INVALID_PARAMETER);
 
-    int drm_fd = -1;
+    /*
+     * Event-based applications use poll/select for pageflip or vsync events,
+     *  since farmebuffer does not produce such events we create common file.
+     *  Without this file application will be locked on poll/select or return
+     *  an error after timer expiring.
+     */
+    file_fd = open("/tmp/tdm_fbdev_select", O_RDWR | O_CREAT | O_TRUNC, ACCESSPERMS);
+    TDM_INFO("Open fake file: /tmp/tdm_fbdev_select %d", file_fd);
+
+    *fd = file_fd;
+
+    return TDM_ERROR_NONE;
+}
+
+tdm_error
+fbdev_display_get_buffer_fd(tdm_backend_data *bdata, int *fd)
+{
+    tdm_fbdev_data *fbdev_data = (tdm_fbdev_data *)bdata;
+    int bufmgr_fd;
+
+    RETURN_VAL_IF_FAIL(fbdev_data, TDM_ERROR_INVALID_PARAMETER);
+    RETURN_VAL_IF_FAIL(fd, TDM_ERROR_INVALID_PARAMETER);
 
     /*
-     * TODO: Temp code. Open drm device for novice test utility, It needs
-     *  it to open and using tbm buffer manger
+     * We assume that shared memory backend will be used, howewer tbm buffer
+     *  manager uses dup() system call on received filed descriptor, that is
+     *  why we must provide tbm buffer manager with valid file descriptor
      */
-    drm_fd = drmOpen("/dev/card0", NULL);
-    if (drm_fd < 0)
-    {
-        TDM_ERR("Cannot open '%s' drm", "/dev/card0");
-    }
 
-    if (drm_fd < 0)
-     {
-         struct udev_device *drm_device = NULL;
-         const char *filename;
-         TDM_WRN("Cannot open drm device.. search by udev");
 
-         drm_device = _tdm_find_primary_gpu();
-         if (drm_device == NULL)
-         {
-             TDM_ERR("fail to find drm device\n");
-             goto close_l;
-         }
 
-         filename = udev_device_get_devnode(drm_device);
+    bufmgr_fd = open("/tmp/tdm_fbdev_bufmng", O_RDWR | O_CREAT | O_TRUNC, ACCESSPERMS);
+    TDM_INFO("Open fake file: /tdm_fbdev_bufmgr %d", bufmgr_fd);
 
-         drm_fd = open(filename, O_RDWR | O_CLOEXEC);
-         if (drm_fd < 0)
-             TDM_ERR("Cannot open drm device(%s)\n", filename);
+    *fd = bufmgr_fd;
 
-         TDM_DBG("open drm device (name:%s, fd:%d)", filename, fd);
-
-         udev_device_unref(drm_device);
-     }
-
-    *fd = drm_fd;
-
-close_l:
     return TDM_ERROR_NONE;
 }
 
@@ -470,6 +411,10 @@ fbdev_output_get_capability(tdm_output *output, tdm_caps_output *caps)
 
     fbdev_data = fbdev_output->fbdev_data;
 
+    snprintf(caps->maker, TDM_NAME_LEN, "unknown");
+    snprintf(caps->model, TDM_NAME_LEN, "unknown");
+    snprintf(caps->name, TDM_NAME_LEN, "unknown");
+
     caps->status = fbdev_output->status;
     caps->type = fbdev_output->connector_type;
     caps->type_id = fbdev_output->connector_type_id;
@@ -486,7 +431,7 @@ fbdev_output_get_capability(tdm_output *output, tdm_caps_output *caps)
     for (i = 0; i < caps->mode_count; i++)
         caps->modes[i] = fbdev_output->output_modes[i];
 
-    caps->mmWidth = fbdev_data->vinfo->width;;
+    caps->mmWidth = fbdev_data->vinfo->width;
     caps->mmHeight = fbdev_data->vinfo->height;
     caps->subpixel = -1;
 
@@ -714,6 +659,10 @@ fbdev_output_set_dpms(tdm_output *output, tdm_output_dpms dpms_value)
         TDM_ERR("FBIOBLANK ioctl failed, errno=%d", errno);
         return TDM_ERROR_OPERATION_FAILED;
     }
+
+    /*
+     * TODO: framebuffer have to be reinitialized again, Maybe
+     */
 
     fbdev_output->dpms_value = dpms_value;
     fbmode = 0;

@@ -3,7 +3,6 @@
 #endif
 
 #include "tdm_fbdev.h"
-
 #include <tdm_helper.h>
 
 #define TDM_FBDEV_NAME "fbdev"
@@ -15,8 +14,13 @@ static tdm_func_display fbdev_func_display =
     NULL,  //display_get_capture_capability
     fbdev_display_get_outputs,
     fbdev_display_get_fd,
+    fbdev_display_get_buffer_fd,
     fbdev_display_handle_events,
     NULL,  //display_create_pp,
+};
+
+static tdm_func_output fbdev_func_output =
+{
     fbdev_output_get_capability,
     fbdev_output_get_layers,
     fbdev_output_set_property,
@@ -30,6 +34,10 @@ static tdm_func_display fbdev_func_display =
     fbdev_output_set_mode,
     fbdev_output_get_mode,
     NULL,   //output_create_capture
+};
+
+static tdm_func_layer fbdev_func_layer =
+{
     fbdev_layer_get_capability,
     fbdev_layer_set_property,
     fbdev_layer_get_property,
@@ -137,16 +145,13 @@ _tdm_fbdev_init_internal(void)
     {
         TDM_INFO("page flip not supported,  errno=%d", errno);
         vinfo->yres_virtual = vinfo->yres;
+    }
 
-        /*
-         * TODO: Does FBIOPAN_DISPLAY ioctl must be invoked for the second time?
-         */
-        ret = ioctl(fbdev_data->fbdev_fd, FBIOPAN_DISPLAY, vinfo);
-        if(ret < 0)
-        {
-            TDM_ERR("FBIOPAN_DISPLAY ioctl failed, errno=%d", errno);
-            goto close_1;
-        }
+    ret = ioctl(fbdev_data->fbdev_fd, FBIOPAN_DISPLAY, vinfo);
+    if(ret < 0)
+    {
+        TDM_ERR("FBIOPAN_DISPLAY ioctl failed, errno=%d", errno);
+        goto close_1;
     }
 
     ret = ioctl(fbdev_data->fbdev_fd, FBIOGET_FSCREENINFO, finfo);
@@ -264,17 +269,22 @@ tdm_fbdev_init(tdm_display *dpy, tdm_error *error)
         return NULL;
     }
 
+    LIST_INITHEAD(&fbdev_data->buffer_list);
+
     ret = tdm_backend_register_func_display(dpy, &fbdev_func_display);
     if (ret != TDM_ERROR_NONE)
         goto failed;
 
-    LIST_INITHEAD(&fbdev_data->buffer_list);
+    ret = tdm_backend_register_func_output(dpy, &fbdev_func_output);
+    if (ret != TDM_ERROR_NONE)
+        goto failed;
+
+    ret = tdm_backend_register_func_layer(dpy, &fbdev_func_layer);
+    if (ret != TDM_ERROR_NONE)
+        goto failed;
 
     fbdev_data->dpy = dpy;
 
-    /*
-     * TODO: does somebody open framebuffer device beside us?
-     */
     fbdev_data->fbdev_fd = _tdm_fbdev_open_fbdev();
     if(fbdev_data->fbdev_fd < 0)
     {
