@@ -227,12 +227,20 @@ tdm_drm_init(tdm_display *dpy, tdm_error *error)
 
     drm_data->dpy = dpy;
 
-    drm_data->drm_fd = _tdm_drm_open_drm();
+    drm_data->drm_fd = tdm_helper_get_drm_master_fd();
+
+    if (drm_data->drm_fd < 0)
+        drm_data->drm_fd = _tdm_drm_open_drm();
+
     if (drm_data->drm_fd < 0)
     {
         ret = TDM_ERROR_OPERATION_FAILED;
         goto failed;
     }
+
+    tdm_helper_set_drm_master_fd(drm_data->drm_fd);
+
+    TDM_DBG("drm_fd(%d)", drm_data->drm_fd);
 
 #if LIBDRM_MAJOR_VERSION >= 2 && LIBDRM_MINOR_VERSION >= 4  && LIBDRM_MICRO_VERSION >= 47
     if (drmSetClientCap(drm_data->drm_fd, DRM_CLIENT_CAP_UNIVERSAL_PLANES, 1) < 0)
