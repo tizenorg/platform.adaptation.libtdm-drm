@@ -587,11 +587,11 @@ tdm_drm_display_create_output_list(tdm_drm_data *drm_data)
 
 		for (j = 0; j < connector->count_props; j++) {
 			drmModePropertyPtr prop = drmModeGetProperty(drm_data->drm_fd,
-			                          connector->props[i]);
+			                          connector->props[j]);
 			if (!prop)
 				continue;
 			if (!strcmp(prop->name, "DPMS")) {
-				output_data->dpms_prop_id = connector->props[i];
+				output_data->dpms_prop_id = connector->props[j];
 				drmModeFreeProperty(prop);
 				break;
 			}
