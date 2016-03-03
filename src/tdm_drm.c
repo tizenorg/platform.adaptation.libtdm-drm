@@ -13,13 +13,13 @@
 
 static tdm_func_display drm_func_display = {
 	drm_display_get_capabilitiy,
-	NULL,  //display_get_pp_capability,
+	drm_display_get_pp_capability,
 	NULL,  //display_get_capture_capability
 	drm_display_get_outputs,
 	drm_display_get_fd,
 	drm_display_get_fd,
 	drm_display_handle_events,
-	NULL,  //display_create_pp,
+	drm_display_create_pp,
 };
 
 static tdm_func_output drm_func_output = {
