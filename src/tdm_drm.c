@@ -118,7 +118,7 @@ _tdm_drm_open_drm(void)
 
 	fd = drmOpen(TDM_DRM_NAME, NULL);
 	if (fd < 0) {
-		TDM_ERR("Cannot open '%s' drm", TDM_DRM_NAME);
+		TDM_WRN("Cannot open '%s' drm", TDM_DRM_NAME);
 	}
 
 #ifdef HAVE_UDEV
@@ -273,7 +273,7 @@ failed:
 }
 
 tdm_backend_module tdm_backend_module_data = {
-	"vigs",
+	"drm",
 	"Samsung",
 	TDM_BACKEND_ABI_VERSION,
 	tdm_drm_init,
