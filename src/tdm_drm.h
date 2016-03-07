@@ -97,6 +97,8 @@ typedef struct _tdm_drm_data
 
     int drm_fd;
 
+    int has_universal_plane;
+
     drmModeResPtr mode_res;
     drmModePlaneResPtr plane_res;
 

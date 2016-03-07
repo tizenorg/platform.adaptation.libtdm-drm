@@ -183,6 +183,43 @@ _tdm_drm_display_wait_vblank(int fd, int pipe, uint *target_msc, void *data)
 }
 
 static tdm_error
+_tdm_drm_display_get_property(tdm_drm_data *drm_data,
+                              unsigned int obj_id, unsigned int obj_type,
+                              const char *name, unsigned int *value,
+                              int *is_immutable)
+{
+	drmModeObjectPropertiesPtr props = NULL;
+	int i;
+
+	props = drmModeObjectGetProperties(drm_data->drm_fd, obj_id, obj_type);
+	if (!props)
+		return TDM_ERROR_OPERATION_FAILED;
+
+	for (i = 0; i < props->count_props; i++) {
+		drmModePropertyPtr prop = drmModeGetProperty(drm_data->drm_fd,
+		                          props->props[i]);
+
+		if (!prop)
+			continue;
+
+		if (!strcmp(prop->name, name)) {
+			if (is_immutable)
+				*is_immutable = prop->flags & DRM_MODE_PROP_IMMUTABLE;
+			if (value)
+				*value = (unsigned int)props->prop_values[i];
+			drmModeFreeProperty(prop);
+			drmModeFreeObjectProperties(props);
+			return TDM_ERROR_NONE;
+		}
+
+		drmModeFreeProperty(prop);
+	}
+	drmModeFreeObjectProperties(props);
+	TDM_DBG("coundn't find '%s' property", name);
+	return TDM_ERROR_OPERATION_FAILED;
+}
+
+static tdm_error
 _tdm_drm_display_commit_primary_layer(tdm_drm_layer_data *layer_data,
                                       void *user_data, int *do_waitvblank)
 {
@@ -344,7 +381,18 @@ _tdm_drm_display_cb_event(int fd, unsigned int sequence,
 static tdm_error
 _tdm_drm_display_create_layer_list(tdm_drm_data *drm_data)
 {
+	tdm_drm_output_data *output_data = NULL;
 	int i;
+
+	/* The TDM drm backend only support one output. */
+	LIST_FOR_EACH_ENTRY(output_data, &drm_data->output_list, link) {
+		break;
+	}
+
+	if (!output_data) {
+		TDM_ERR("no output");
+		return TDM_ERROR_OPERATION_FAILED;
+	}
 
 	if (drm_data->plane_res->count_planes == 0) {
 		TDM_ERR("no layer error");
@@ -352,23 +400,17 @@ _tdm_drm_display_create_layer_list(tdm_drm_data *drm_data)
 	}
 
 	for (i = 0; i < drm_data->plane_res->count_planes; i++) {
-		tdm_drm_output_data *output_data = NULL;
 		tdm_drm_layer_data *layer_data;
 		drmModePlanePtr plane;
-
-		if (i == 3) {
-			TDM_DBG("doesn't need more layer set");
-			break;
-		}
-
-		LIST_FOR_EACH_ENTRY(output_data, &drm_data->output_list, link) {
-			if (output_data->pipe == 0)
-				break;
-		}
 
 		plane = drmModeGetPlane(drm_data->drm_fd, drm_data->plane_res->planes[i]);
 		if (!plane) {
 			TDM_ERR("no plane");
+			continue;
+		}
+
+		if ((plane->possible_crtcs & (1 << output_data->pipe)) == 0) {
+			drmModeFreePlane(plane);
 			continue;
 		}
 
@@ -383,36 +425,128 @@ _tdm_drm_display_create_layer_list(tdm_drm_data *drm_data)
 		layer_data->output_data = output_data;
 		layer_data->plane_id = drm_data->plane_res->planes[i];
 
-		if (drm_data->plane_res->count_planes == 1) {
-			layer_data->capabilities = TDM_LAYER_CAPABILITY_PRIMARY |
-			                           TDM_LAYER_CAPABILITY_GRAPHIC;
-			output_data->primary_layer = layer_data;
-		} else if (drm_data->plane_res->count_planes == 2) {
-			if (i == 0) {
-				layer_data->capabilities = TDM_LAYER_CAPABILITY_PRIMARY |
-				                           TDM_LAYER_CAPABILITY_GRAPHIC;
-				output_data->primary_layer = layer_data;
-			} else {
-				layer_data->capabilities = TDM_LAYER_CAPABILITY_OVERLAY |
-				                           TDM_LAYER_CAPABILITY_GRAPHIC;
-			}
-		} else {
-			if (i == 0) {
-				layer_data->capabilities = TDM_LAYER_CAPABILITY_CURSOR |
-				                           TDM_LAYER_CAPABILITY_GRAPHIC;
-			} else if (i == 1) {
-				layer_data->capabilities = TDM_LAYER_CAPABILITY_PRIMARY |
-				                           TDM_LAYER_CAPABILITY_GRAPHIC;
-				output_data->primary_layer = layer_data;
-			} else {
-				layer_data->capabilities = TDM_LAYER_CAPABILITY_OVERLAY |
-				                           TDM_LAYER_CAPABILITY_GRAPHIC;
-			}
-		}
+		layer_data->capabilities = TDM_LAYER_CAPABILITY_PRIMARY |
+		                           TDM_LAYER_CAPABILITY_GRAPHIC;
+		output_data->primary_layer = layer_data;
 
 		TDM_DBG("layer_data(%p) plane_id(%d) crtc_id(%d) capabilities(%x)",
 		        layer_data, layer_data->plane_id, layer_data->output_data->crtc_id,
 		        layer_data->capabilities);
+
+		LIST_ADDTAIL(&layer_data->link, &output_data->layer_list);
+
+		drmModeFreePlane(plane);
+
+		/* can't take care of other planes for various hardware devices */
+		break;
+	}
+
+	return TDM_ERROR_NONE;
+}
+
+static tdm_error
+_tdm_drm_display_create_layer_list_type(tdm_drm_data *drm_data)
+{
+	tdm_drm_output_data *output_data = NULL;
+	unsigned int type = 0;
+	tdm_error ret;
+	int i;
+
+	/* The TDM drm backend only support one output. */
+	LIST_FOR_EACH_ENTRY(output_data, &drm_data->output_list, link) {
+		break;
+	}
+
+	if (!output_data) {
+		TDM_ERR("no output");
+		return TDM_ERROR_OPERATION_FAILED;
+	}
+
+	ret = _tdm_drm_display_get_property(drm_data,
+	                                    drm_data->plane_res->planes[0],
+	                                    DRM_MODE_OBJECT_PLANE, "type", &type,
+	                                    NULL);
+	if (ret != TDM_ERROR_NONE) {
+		TDM_ERR("plane doesn't have 'type' property. Call a fallback function");
+
+		/* if a plane doesn't have "type" property, we call a fallback function
+		 * as default
+		 */
+		return _tdm_drm_display_create_layer_list(drm_data);
+	}
+
+	for (i = 0; i < drm_data->plane_res->count_planes; i++) {
+		tdm_drm_layer_data *layer_data;
+		drmModePlanePtr plane;
+		unsigned int type = 0;
+
+		plane = drmModeGetPlane(drm_data->drm_fd, drm_data->plane_res->planes[i]);
+		if (!plane) {
+			TDM_ERR("no plane");
+			continue;
+		}
+
+		if ((plane->possible_crtcs & (1 << output_data->pipe)) == 0) {
+			drmModeFreePlane(plane);
+			continue;
+		}
+
+		ret = _tdm_drm_display_get_property(drm_data,
+		                                    drm_data->plane_res->planes[i],
+		                                    DRM_MODE_OBJECT_PLANE, "type", &type,
+		                                    NULL);
+		if (ret != TDM_ERROR_NONE) {
+			TDM_ERR("plane(%d) doesn't have 'type' info",
+			        drm_data->plane_res->planes[i]);
+			drmModeFreePlane(plane);
+			continue;
+		}
+
+		layer_data = calloc(1, sizeof(tdm_drm_layer_data));
+		if (!layer_data) {
+			TDM_ERR("alloc failed");
+			drmModeFreePlane(plane);
+			continue;
+		}
+
+		LIST_FOR_EACH_ENTRY(output_data, &drm_data->output_list, link) {
+			if (plane->possible_crtcs & (1 << output_data->pipe))
+				break;
+		}
+
+		if (!output_data) {
+			TDM_ERR("plane(%d) couldn't found proper output", plane->plane_id);
+			drmModeFreePlane(plane);
+			free(layer_data);
+			continue;
+		}
+
+		layer_data->drm_data = drm_data;
+		layer_data->output_data = output_data;
+		layer_data->plane_id = drm_data->plane_res->planes[i];
+
+		if (type == DRM_PLANE_TYPE_CURSOR) {
+			layer_data->capabilities = TDM_LAYER_CAPABILITY_CURSOR |
+			                           TDM_LAYER_CAPABILITY_GRAPHIC;
+			layer_data->zpos = 2;
+		} else if (type == DRM_PLANE_TYPE_OVERLAY) {
+			layer_data->capabilities = TDM_LAYER_CAPABILITY_OVERLAY |
+			                           TDM_LAYER_CAPABILITY_GRAPHIC;
+			layer_data->zpos = 1;
+		} else if (type == DRM_PLANE_TYPE_PRIMARY) {
+			layer_data->capabilities = TDM_LAYER_CAPABILITY_PRIMARY |
+			                           TDM_LAYER_CAPABILITY_GRAPHIC;
+			layer_data->zpos = 0;
+			output_data->primary_layer = layer_data;
+		} else {
+			drmModeFreePlane(plane);
+			free(layer_data);
+			continue;
+		}
+
+		TDM_DBG("layer_data(%p) plane_id(%d) crtc_id(%d) zpos(%d) capabilities(%x)",
+		        layer_data, layer_data->plane_id, layer_data->output_data->crtc_id,
+		        layer_data->zpos, layer_data->capabilities);
 
 		LIST_ADDTAIL(&layer_data->link, &output_data->layer_list);
 
@@ -466,7 +600,11 @@ tdm_drm_display_create_layer_list(tdm_drm_data *drm_data)
 	tdm_drm_output_data *output_data = NULL;
 	tdm_error ret;
 
-	ret = _tdm_drm_display_create_layer_list(drm_data);
+	if (!drm_data->has_universal_plane)
+		ret = _tdm_drm_display_create_layer_list(drm_data);
+	else
+		ret = _tdm_drm_display_create_layer_list_type(drm_data);
+
 	if (ret != TDM_ERROR_NONE)
 		return ret;
 
@@ -525,6 +663,17 @@ tdm_drm_display_create_output_list(tdm_drm_data *drm_data)
 			TDM_ERR("no connector");
 			ret = TDM_ERROR_OPERATION_FAILED;
 			goto failed_create;
+		}
+
+		/* The TDM drm backend is not interested with disconnected connectors.
+		 * And it only considers 1 connected connector because it is the TDM
+		 * reference backend and can't take care of all hardware devices.
+		 * To support various connectors, planes and crtcs, the new TDM backend
+		 * should be implemented.
+		 */
+		if (connector->connection != DRM_MODE_CONNECTED) {
+			drmModeFreeConnector(connector);
+			continue;
 		}
 
 		if (connector->count_encoders != 1) {
@@ -598,6 +747,9 @@ tdm_drm_display_create_output_list(tdm_drm_data *drm_data)
 			drmModeFreeProperty(prop);
 		}
 
+		if (output_data->dpms_prop_id == 0)
+			TDM_WRN("not support DPMS");
+
 		output_data->count_modes = connector->count_modes;
 		output_data->drm_modes = calloc(connector->count_modes,
 		                                sizeof(drmModeModeInfo));
@@ -636,6 +788,14 @@ tdm_drm_display_create_output_list(tdm_drm_data *drm_data)
 
 		drmModeFreeEncoder(encoder);
 		drmModeFreeConnector(connector);
+
+		/* The TDM drm backend is not interested with disconnected connectors.
+		 * And it only considers 1 connected connector because it is the TDM
+		 * reference backend and can't take care of all hardware devices.
+		 * To support various connectors, planes and crtcs, the new TDM backend
+		 * should be implemented.
+		 */
+		break;
 	}
 
 	TDM_DBG("output count: %d", drm_data->mode_res->count_connectors);
@@ -1078,6 +1238,11 @@ drm_output_set_dpms(tdm_output *output, tdm_output_dpms dpms_value)
 	int ret;
 
 	RETURN_VAL_IF_FAIL(output_data, TDM_ERROR_INVALID_PARAMETER);
+
+	if (output_data->dpms_prop_id == 0) {
+		TDM_WRN("not support DPMS");
+		return TDM_ERROR_OPERATION_FAILED;
+	}
 
 	drm_data = output_data->drm_data;
 	ret = drmModeObjectSetProperty(drm_data->drm_fd,
