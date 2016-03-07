@@ -36,7 +36,7 @@ AC_SUBST(TDM_DRM_LIBS)
 
 AC_DEFINE_UNQUOTED(LIBDRM_MAJOR_VERSION, [`pkg-config --modversion libdrm | cut -d '.' -f 1`], dnl
                    [libdrm major version])
-AC_DEFINE_UNQUOTED(LIBDRM_MIROR_VERSION, [`pkg-config --modversion libdrm | cut -d '.' -f 2`], dnl
+AC_DEFINE_UNQUOTED(LIBDRM_MINOR_VERSION, [`pkg-config --modversion libdrm | cut -d '.' -f 2`], dnl
                    [libdrm major version])
 AC_DEFINE_UNQUOTED(LIBDRM_MICRO_VERSION, [`pkg-config --modversion libdrm | cut -d '.' -f 3`], dnl
                    [libdrm major version])
