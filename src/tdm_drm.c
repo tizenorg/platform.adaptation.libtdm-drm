@@ -9,6 +9,8 @@
 #include "tdm_drm.h"
 #include <tdm_helper.h>
 
+//#define ENABLE_PP
+
 #define TDM_DRM_NAME "vigs"
 
 static tdm_func_display drm_func_display = {
@@ -50,6 +52,7 @@ static tdm_func_layer drm_func_layer = {
 	NULL,    //layer_create_capture
 };
 
+#ifdef ENABLE_PP
 static tdm_func_pp drm_func_pp = {
 	drm_pp_destroy,
 	drm_pp_set_info,
@@ -57,6 +60,7 @@ static tdm_func_pp drm_func_pp = {
 	drm_pp_commit,
 	drm_pp_set_done_handler,
 };
+#endif
 
 static tdm_drm_data *drm_data;
 
@@ -211,9 +215,11 @@ tdm_drm_init(tdm_display *dpy, tdm_error *error)
 	if (ret != TDM_ERROR_NONE)
 		goto failed;
 
+#ifdef ENABLE_PP
 	ret = tdm_backend_register_func_pp(dpy, &drm_func_pp);
 	if (ret != TDM_ERROR_NONE)
 		goto failed;
+#endif
 
 	drm_data->dpy = dpy;
 
