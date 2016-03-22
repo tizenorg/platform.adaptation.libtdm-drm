@@ -223,11 +223,22 @@ tdm_drm_init(tdm_display *dpy, tdm_error *error)
 
 	drm_data->dpy = dpy;
 
-	drm_data->drm_fd = _tdm_drm_open_drm();
+	/* The drm master fd can be opened by a tbm backend module in
+	 * tbm_bufmgr_init() time. In this case, we just get it from
+	 * TBM_DRM_MASTER_FD enviroment.
+	 * 
+	 */
+	drm_data->drm_fd = tdm_helper_get_fd("TBM_DRM_MASTER_FD");
+	if (drm_data->drm_fd < 0)
+		drm_data->drm_fd = _tdm_drm_open_drm();
+
 	if (drm_data->drm_fd < 0) {
 		ret = TDM_ERROR_OPERATION_FAILED;
 		goto failed;
 	}
+
+	/* To share the drm master fd with other modules in display server side. */
+	tdm_helper_set_fd("TDM_DRM_MASTER_FD", drm_data->drm_fd);
 
 #if LIBDRM_MAJOR_VERSION >= 2 && LIBDRM_MINOR_VERSION >= 4  && LIBDRM_MICRO_VERSION >= 47
 	if (drmSetClientCap(drm_data->drm_fd, DRM_CLIENT_CAP_UNIVERSAL_PLANES, 1) < 0) {
