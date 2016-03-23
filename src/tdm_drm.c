@@ -13,54 +13,6 @@
 
 #define TDM_DRM_NAME "vigs"
 
-static tdm_func_display drm_func_display = {
-	drm_display_get_capabilitiy,
-	drm_display_get_pp_capability,
-	NULL,  //display_get_capture_capability
-	drm_display_get_outputs,
-	drm_display_get_fd,
-	drm_display_handle_events,
-	drm_display_create_pp,
-};
-
-static tdm_func_output drm_func_output = {
-	drm_output_get_capability,
-	drm_output_get_layers,
-	drm_output_set_property,
-	drm_output_get_property,
-	drm_output_wait_vblank,
-	drm_output_set_vblank_handler,
-	drm_output_commit,
-	drm_output_set_commit_handler,
-	drm_output_set_dpms,
-	drm_output_get_dpms,
-	drm_output_set_mode,
-	drm_output_get_mode,
-	NULL,   //output_create_capture
-};
-
-static tdm_func_layer drm_func_layer = {
-	drm_layer_get_capability,
-	drm_layer_set_property,
-	drm_layer_get_property,
-	drm_layer_set_info,
-	drm_layer_get_info,
-	drm_layer_set_buffer,
-	drm_layer_unset_buffer,
-	NULL,    //layer_set_video_pos
-	NULL,    //layer_create_capture
-};
-
-#ifdef ENABLE_PP
-static tdm_func_pp drm_func_pp = {
-	drm_pp_destroy,
-	drm_pp_set_info,
-	drm_pp_attach,
-	drm_pp_commit,
-	drm_pp_set_done_handler,
-};
-#endif
-
 static tdm_drm_data *drm_data;
 
 #ifdef HAVE_UDEV
@@ -175,6 +127,12 @@ tdm_drm_deinit(tdm_backend_data *bdata)
 tdm_backend_data *
 tdm_drm_init(tdm_display *dpy, tdm_error *error)
 {
+	tdm_func_display drm_func_display;
+	tdm_func_output drm_func_output;
+	tdm_func_layer drm_func_layer;
+#ifdef ENABLE_PP
+	tdm_func_pp drm_func_pp;
+#endif
 	tdm_error ret;
 
 	if (!dpy) {
@@ -201,6 +159,46 @@ tdm_drm_init(tdm_display *dpy, tdm_error *error)
 
 	LIST_INITHEAD(&drm_data->output_list);
 	LIST_INITHEAD(&drm_data->buffer_list);
+
+	memset(&drm_func_display, 0, sizeof(drm_func_display));
+	drm_func_display.display_get_capabilitiy = drm_display_get_capabilitiy;
+	drm_func_display.display_get_pp_capability = drm_display_get_pp_capability;
+	drm_func_display.display_get_outputs = drm_display_get_outputs;
+	drm_func_display.display_get_fd = drm_display_get_fd;
+	drm_func_display.display_handle_events = drm_display_handle_events;
+	drm_func_display.display_create_pp = drm_display_create_pp;
+
+	memset(&drm_func_output, 0, sizeof(drm_func_output));
+	drm_func_output.output_get_capability = drm_output_get_capability;
+	drm_func_output.output_get_layers = drm_output_get_layers;
+	drm_func_output.output_set_property = drm_output_set_property;
+	drm_func_output.output_get_property = drm_output_get_property;
+	drm_func_output.output_wait_vblank = drm_output_wait_vblank;
+	drm_func_output.output_set_vblank_handler = drm_output_set_vblank_handler;
+	drm_func_output.output_commit = drm_output_commit;
+	drm_func_output.output_set_commit_handler = drm_output_set_commit_handler;
+	drm_func_output.output_set_dpms = drm_output_set_dpms;
+	drm_func_output.output_get_dpms = drm_output_get_dpms;
+	drm_func_output.output_set_mode = drm_output_set_mode;
+	drm_func_output.output_get_mode = drm_output_get_mode;
+
+	memset(&drm_func_layer, 0, sizeof(drm_func_layer));
+	drm_func_layer.layer_get_capability = drm_layer_get_capability;
+	drm_func_layer.layer_set_property = drm_layer_set_property;
+	drm_func_layer.layer_get_property = drm_layer_get_property;
+	drm_func_layer.layer_set_info = drm_layer_set_info;
+	drm_func_layer.layer_get_info = drm_layer_get_info;
+	drm_func_layer.layer_set_buffer = drm_layer_set_buffer;
+	drm_func_layer.layer_unset_buffer = drm_layer_unset_buffer;
+
+#ifdef ENABLE_PP
+	memset(&drm_func_pp, 0, sizeof(drm_func_pp));
+	drm_func_pp.pp_destroy = drm_pp_destroy;
+	drm_func_pp.pp_set_info = drm_pp_set_info;
+	drm_func_pp.pp_attach = drm_pp_attach;
+	drm_func_pp.pp_commit = drm_pp_commit;
+	drm_func_pp.pp_set_done_handler = drm_pp_set_done_handler;
+#endif
 
 	ret = tdm_backend_register_func_display(dpy, &drm_func_display);
 	if (ret != TDM_ERROR_NONE)
