@@ -57,6 +57,8 @@ struct _tdm_drm_output_data {
 	tdm_output_commit_handler commit_func;
 
 	tdm_output_conn_status status;
+	tdm_output_status_handler status_func;
+	void *status_user_data;
 
 	int mode_changed;
 	const tdm_output_mode *current_mode;
@@ -638,6 +640,54 @@ tdm_drm_display_destroy_output_list(tdm_drm_data *drm_data)
 		free(o->drm_modes);
 		free(o->output_modes);
 		free(o);
+	}
+}
+
+static tdm_error
+_tdm_drm_output_update_status(tdm_drm_output_data *output_data,
+                              tdm_output_conn_status status)
+{
+	RETURN_VAL_IF_FAIL(output_data, TDM_ERROR_INVALID_PARAMETER);
+
+	if (output_data->status == status)
+		return TDM_ERROR_NONE;
+
+	output_data->status = status;
+
+	if (output_data->status_func)
+		output_data->status_func(output_data, status,
+		                         output_data->status_user_data);
+
+	return TDM_ERROR_NONE;
+}
+
+void
+tdm_drm_display_update_output_status(tdm_drm_data *drm_data)
+{
+	tdm_drm_output_data *output_data = NULL;
+
+	if (LIST_IS_EMPTY(&drm_data->output_list))
+		return;
+
+	LIST_FOR_EACH_ENTRY(output_data, &drm_data->output_list, link) {
+		drmModeConnectorPtr connector;
+		tdm_output_conn_status new_status;
+
+		connector = drmModeGetConnector(drm_data->drm_fd,
+		                                output_data->connector_id);
+		if (!connector) {
+			TDM_ERR("no connector: %d", output_data->connector_id);
+			continue;
+		}
+
+		if (connector->connection == DRM_MODE_CONNECTED)
+			new_status = TDM_OUTPUT_CONN_STATUS_CONNECTED;
+		else
+			new_status = TDM_OUTPUT_CONN_STATUS_DISCONNECTED;
+
+		_tdm_drm_output_update_status(output_data, new_status);
+
+		drmModeFreeConnector(connector);
 	}
 }
 
@@ -1309,6 +1359,22 @@ drm_output_get_mode(tdm_output *output, const tdm_output_mode **mode)
 	RETURN_VAL_IF_FAIL(mode, TDM_ERROR_INVALID_PARAMETER);
 
 	*mode = output_data->current_mode;
+
+	return TDM_ERROR_NONE;
+}
+
+tdm_error
+drm_output_set_status_handler(tdm_output *output,
+                              tdm_output_status_handler func,
+                              void *user_data)
+{
+	tdm_drm_output_data *output_data = output;
+
+	RETURN_VAL_IF_FAIL(output_data, TDM_ERROR_INVALID_PARAMETER);
+	RETURN_VAL_IF_FAIL(func, TDM_ERROR_INVALID_PARAMETER);
+
+	output_data->status_func = func;
+	output_data->status_user_data = user_data;
 
 	return TDM_ERROR_NONE;
 }

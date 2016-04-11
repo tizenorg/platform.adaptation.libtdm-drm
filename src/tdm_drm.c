@@ -64,6 +64,107 @@ _tdm_find_primary_gpu(void)
 	udev_enumerate_unref(e);
 	return drm_device;
 }
+
+static tdm_error
+_tdm_drm_udev_fd_handler(int fd, tdm_event_loop_mask mask, void *user_data)
+{
+	tdm_drm_data *edata = (tdm_drm_data*)user_data;
+	struct udev_device *dev;
+	const char *hotplug;
+	struct stat s;
+	dev_t udev_devnum;
+	int ret;
+
+	dev = udev_monitor_receive_device(edata->uevent_monitor);
+	if (!dev) {
+		TDM_ERR("couldn't receive device");
+		return TDM_ERROR_OPERATION_FAILED;
+	}
+
+	udev_devnum = udev_device_get_devnum(dev);
+
+	ret = fstat(edata->drm_fd, &s);
+	if (ret == -1) {
+		TDM_ERR("fstat failed");
+		return TDM_ERROR_OPERATION_FAILED;
+	}
+
+	hotplug = udev_device_get_property_value(dev, "HOTPLUG");
+
+	if (memcmp(&s.st_rdev, &udev_devnum, sizeof (dev_t)) == 0 &&
+	        hotplug && atoi(hotplug) == 1)
+	{
+		TDM_INFO("HotPlug");
+		tdm_drm_display_update_output_status(edata);
+	}
+
+	udev_device_unref(dev);
+
+	return TDM_ERROR_NONE;
+}
+
+static void
+_tdm_drm_udev_init(tdm_drm_data *edata)
+{
+	struct udev *u = NULL;
+	struct udev_monitor *mon = NULL;
+
+	u = udev_new();
+	if (!u) {
+		TDM_ERR("couldn't create udev");
+		goto failed;
+	}
+
+	mon = udev_monitor_new_from_netlink(u, "udev");
+	if (!mon) {
+		TDM_ERR("couldn't create udev monitor");
+		goto failed;
+	}
+
+	if (udev_monitor_filter_add_match_subsystem_devtype(mon, "drm", "drm_minor") > 0 ||
+	    udev_monitor_enable_receiving(mon) < 0) {
+		TDM_ERR("add match subsystem failed");
+		goto failed;
+	}
+
+	edata->uevent_source =
+		tdm_event_loop_add_fd_handler(edata->dpy, udev_monitor_get_fd(mon),
+		                              TDM_EVENT_LOOP_READABLE,
+		                              _tdm_drm_udev_fd_handler,
+		                              edata, NULL);
+	if (!edata->uevent_source) {
+		TDM_ERR("couldn't create udev event source");
+		goto failed;
+	}
+
+	edata->uevent_monitor = mon;
+
+	TDM_INFO("hotplug monitor created");
+
+	return;
+failed:
+	if (mon)
+		udev_monitor_unref(mon);
+	if (u)
+		udev_unref(u);
+}
+
+static void
+_tdm_drm_udev_deinit(tdm_drm_data *edata)
+{
+	if (edata->uevent_source) {
+		tdm_event_loop_source_remove(edata->uevent_source);
+		edata->uevent_source = NULL;
+	}
+
+	if (edata->uevent_monitor) {
+		struct udev *u = udev_monitor_get_udev(edata->uevent_monitor);
+		udev_monitor_unref(edata->uevent_monitor);
+		udev_unref(u);
+		edata->uevent_monitor = NULL;
+		TDM_INFO("hotplug monitor destroyed");
+	}
+}
 #endif
 
 static int
@@ -110,6 +211,10 @@ tdm_drm_deinit(tdm_backend_data *bdata)
 		return;
 
 	TDM_INFO("deinit");
+
+#ifdef HAVE_UDEV
+	_tdm_drm_udev_deinit(drm_data);
+#endif
 
 	tdm_drm_display_destroy_output_list(drm_data);
 
@@ -181,6 +286,9 @@ tdm_drm_init(tdm_display *dpy, tdm_error *error)
 	drm_func_output.output_get_dpms = drm_output_get_dpms;
 	drm_func_output.output_set_mode = drm_output_set_mode;
 	drm_func_output.output_get_mode = drm_output_get_mode;
+#ifdef HAVE_UDEV
+	drm_func_output.output_set_status_handler = drm_output_set_status_handler;
+#endif
 
 	memset(&drm_func_layer, 0, sizeof(drm_func_layer));
 	drm_func_layer.layer_get_capability = drm_layer_get_capability;
@@ -236,6 +344,10 @@ tdm_drm_init(tdm_display *dpy, tdm_error *error)
 
 	/* To share the drm master fd with other modules in display server side. */
 	tdm_helper_set_fd("TDM_DRM_MASTER_FD", drm_data->drm_fd);
+
+#ifdef HAVE_UDEV
+	_tdm_drm_udev_init(drm_data);
+#endif
 
 #if LIBDRM_MAJOR_VERSION >= 2 && LIBDRM_MINOR_VERSION >= 4  && LIBDRM_MICRO_VERSION >= 47
 	if (drmSetClientCap(drm_data->drm_fd, DRM_CLIENT_CAP_UNIVERSAL_PLANES, 1) < 0) {

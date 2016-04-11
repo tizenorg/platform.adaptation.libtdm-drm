@@ -21,6 +21,10 @@
 #include <tdm_log.h>
 #include <tdm_list.h>
 
+#if HAVE_UDEV
+#include <libudev.h>
+#endif
+
 /* drm backend functions (display) */
 tdm_error    drm_display_get_capabilitiy(tdm_backend_data *bdata, tdm_caps_display *caps);
 tdm_error    drm_display_get_pp_capability(tdm_backend_data *bdata, tdm_caps_pp *caps);
@@ -40,6 +44,7 @@ tdm_error    drm_output_set_dpms(tdm_output *output, tdm_output_dpms dpms_value)
 tdm_error    drm_output_get_dpms(tdm_output *output, tdm_output_dpms *dpms_value);
 tdm_error    drm_output_set_mode(tdm_output *output, const tdm_output_mode *mode);
 tdm_error    drm_output_get_mode(tdm_output *output, const tdm_output_mode **mode);
+tdm_error    drm_output_set_status_handler(tdm_output *output, tdm_output_status_handler func, void *user_data);
 tdm_error    drm_layer_get_capability(tdm_layer *layer, tdm_caps_layer *caps);
 tdm_error    drm_layer_set_property(tdm_layer *layer, unsigned int id, tdm_value value);
 tdm_error    drm_layer_get_property(tdm_layer *layer, unsigned int id, tdm_value *value);
@@ -99,6 +104,11 @@ typedef struct _tdm_drm_data
 
     int has_universal_plane;
 
+#if HAVE_UDEV
+    struct udev_monitor *uevent_monitor;
+    tdm_event_loop_source *uevent_source;
+#endif
+
     drmModeResPtr mode_res;
     drmModePlaneResPtr plane_res;
 
@@ -109,6 +119,7 @@ typedef struct _tdm_drm_data
 uint32_t     tdm_drm_format_to_drm_format(tbm_format format);
 tbm_format   tdm_drm_format_to_tbm_format(uint32_t format);
 
+void         tdm_drm_display_update_output_status(tdm_drm_data *drm_data);
 tdm_error    tdm_drm_display_create_output_list(tdm_drm_data *drm_data);
 void         tdm_drm_display_destroy_output_list(tdm_drm_data *drm_data);
 tdm_error    tdm_drm_display_create_layer_list(tdm_drm_data *drm_data);
