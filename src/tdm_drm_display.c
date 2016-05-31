@@ -1176,7 +1176,7 @@ drm_output_wait_vblank(tdm_output *output, int interval, int sync,
 	if (ret != TDM_ERROR_NONE)
 		goto failed_vblank;
 
-	target_msc++;
+	target_msc += interval;
 
 	event_data->type = TDM_DRM_EVENT_TYPE_WAIT;
 	event_data->output_data = output_data;
