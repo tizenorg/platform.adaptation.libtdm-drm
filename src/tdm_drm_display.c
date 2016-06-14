@@ -339,6 +339,14 @@ _tdm_drm_display_commit_layer(tdm_drm_layer_data *layer_data)
 		return TDM_ERROR_OPERATION_FAILED;
 	}
 
+	TDM_DBG("plane(%d) crtc(%d) pos(%d) on: fb(%d,[%d,%d %dx%d]=>[%d,%d %dx%d])\n",
+			layer_data->plane_id, output_data->crtc_id, layer_data->zpos,
+			layer_data->display_buffer->fb_id,
+			layer_data->info.src_config.pos.x, layer_data->info.src_config.pos.y,
+			layer_data->info.src_config.pos.w, layer_data->info.src_config.pos.h,
+			layer_data->info.dst_pos.x, layer_data->info.dst_pos.y,
+			layer_data->info.dst_pos.w, layer_data->info.dst_pos.h);
+
 	return TDM_ERROR_NONE;
 }
 

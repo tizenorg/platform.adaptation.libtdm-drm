@@ -9,7 +9,7 @@
 #include "tdm_drm.h"
 #include <tdm_helper.h>
 
-//#define ENABLE_PP
+#define ENABLE_PP
 
 #define TDM_DRM_NAME "vigs"
 

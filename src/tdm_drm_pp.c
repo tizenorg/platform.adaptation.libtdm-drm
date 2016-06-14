@@ -5,6 +5,7 @@
 #include <pixman.h>
 
 #include "tdm_drm.h"
+#include "tdm_helper.h"
 
 typedef struct _tdm_drm_pp_buffer {
 	tbm_surface_h src;
@@ -174,17 +175,17 @@ _tdm_drm_pp_convert(tdm_drm_pp_buffer *buffer, tdm_info_pp *info)
 	/* not handle buffers which have 2 more gem handles */
 
 	memset(&src_info, 0, sizeof(tbm_surface_info_s));
-	tbm_surface_get_info(buffer->src, &src_info);
-	RETURN_VAL_IF_FAIL(src_info.planes[0].ptr != NULL, TDM_ERROR_INVALID_PARAMETER);
+	tbm_surface_map(buffer->src, TBM_OPTION_READ, &src_info);
+	GOTO_IF_FAIL(src_info.planes[0].ptr != NULL, fail_convert);
 
 	memset(&dst_info, 0, sizeof(tbm_surface_info_s));
-	tbm_surface_get_info(buffer->dst, &dst_info);
-	RETURN_VAL_IF_FAIL(dst_info.planes[0].ptr != NULL, TDM_ERROR_INVALID_PARAMETER);
+	tbm_surface_map(buffer->dst, TBM_OPTION_WRITE, &dst_info);
+	GOTO_IF_FAIL(dst_info.planes[0].ptr != NULL, fail_convert);
 
 	src_format = _tdm_drm_pp_pixman_get_format(src_info.format);
-	RETURN_VAL_IF_FAIL(src_format > 0, TDM_ERROR_INVALID_PARAMETER);
+	GOTO_IF_FAIL(src_format > 0, fail_convert);
 	dst_format = _tdm_drm_pp_pixman_get_format(dst_info.format);
-	RETURN_VAL_IF_FAIL(dst_format > 0, TDM_ERROR_INVALID_PARAMETER);
+	GOTO_IF_FAIL(dst_format > 0, fail_convert);
 
 	if (src_info.format == TBM_FORMAT_YUV420) {
 		if (dst_info.format == TBM_FORMAT_XRGB8888)
@@ -194,7 +195,7 @@ _tdm_drm_pp_convert(tdm_drm_pp_buffer *buffer, tdm_info_pp *info)
 		else if (dst_info.format == TBM_FORMAT_YVU420) {
 			TDM_ERR("can't convert %c%c%c%c to %c%c%c%c",
 			        FOURCC_STR(src_info.format), FOURCC_STR(dst_info.format));
-			return TDM_ERROR_OPERATION_FAILED;
+			goto fail_convert;
 		}
 	}
 	/* need checking for other formats also? */
@@ -204,7 +205,7 @@ _tdm_drm_pp_convert(tdm_drm_pp_buffer *buffer, tdm_info_pp *info)
 	else
 		sbw = src_info.planes[0].stride;
 
-	if (IS_RGB(src_info.format))
+	if (IS_RGB(dst_info.format))
 		dbw = dst_info.planes[0].stride >> 2;
 	else
 		dbw = dst_info.planes[0].stride;
@@ -223,8 +224,14 @@ _tdm_drm_pp_convert(tdm_drm_pp_buffer *buffer, tdm_info_pp *info)
 	                           info->dst_config.pos.x, info->dst_config.pos.y,
 	                           info->dst_config.pos.w, info->dst_config.pos.h,
 	                           rotate, hflip, 0);
+	tbm_surface_unmap(buffer->src);
+	tbm_surface_unmap(buffer->dst);
 
 	return TDM_ERROR_NONE;
+fail_convert:
+	tbm_surface_unmap(buffer->src);
+	tbm_surface_unmap(buffer->dst);
+	return TDM_ERROR_OPERATION_FAILED;
 }
 
 tdm_error
