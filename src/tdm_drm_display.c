@@ -468,7 +468,11 @@ static tdm_error
 _tdm_drm_display_create_layer_list_type(tdm_drm_data *drm_data)
 {
 	tdm_drm_output_data *output_data = NULL;
+	drmModePlanePtr *planes = NULL;
+	unsigned int *types = NULL;
 	unsigned int type = 0;
+	int plane_cnt, primary_cnt, ovl_cnt, cursor_cnt;
+	int opos_next, cpos_next;
 	tdm_error ret;
 	int i;
 
@@ -495,15 +499,26 @@ _tdm_drm_display_create_layer_list_type(tdm_drm_data *drm_data)
 		return _tdm_drm_display_create_layer_list(drm_data);
 	}
 
+	planes = calloc(drm_data->plane_res->count_planes, sizeof(drmModePlanePtr));
+	if (!planes) {
+		TDM_ERR("alloc failed");
+		goto failed;
+	}
+
+	types = calloc(drm_data->plane_res->count_planes, sizeof(unsigned int));
+	if (!types) {
+		TDM_ERR("alloc failed");
+		goto failed;
+	}
+
+	plane_cnt = 0;
 	for (i = 0; i < drm_data->plane_res->count_planes; i++) {
-		tdm_drm_layer_data *layer_data;
 		drmModePlanePtr plane;
-		unsigned int type = 0;
 
 		plane = drmModeGetPlane(drm_data->drm_fd, drm_data->plane_res->planes[i]);
 		if (!plane) {
-			TDM_ERR("no plane");
-			continue;
+			TDM_ERR("no plane(%d)", drm_data->plane_res->planes[i]);
+			goto failed;
 		}
 
 		if ((plane->possible_crtcs & (1 << output_data->pipe)) == 0) {
@@ -516,50 +531,63 @@ _tdm_drm_display_create_layer_list_type(tdm_drm_data *drm_data)
 		                                    DRM_MODE_OBJECT_PLANE, "type", &type,
 		                                    NULL);
 		if (ret != TDM_ERROR_NONE) {
+			drmModeFreePlane(plane);
 			TDM_ERR("plane(%d) doesn't have 'type' info",
 			        drm_data->plane_res->planes[i]);
-			drmModeFreePlane(plane);
-			continue;
+			goto failed;
 		}
+
+		planes[plane_cnt] = plane;
+		types[plane_cnt] = type;
+		plane_cnt++;
+	}
+
+	primary_cnt = ovl_cnt = cursor_cnt = 0;
+	for (i = 0; i < plane_cnt; i++) {
+		if (types[i] == DRM_PLANE_TYPE_CURSOR)
+			cursor_cnt++;
+		else if (types[i] == DRM_PLANE_TYPE_OVERLAY)
+			ovl_cnt++;
+		else if (types[i] == DRM_PLANE_TYPE_PRIMARY)
+			primary_cnt++;
+		else
+			TDM_ERR("invalid type(%d)", types[i]);
+	}
+
+	if (primary_cnt != 1) {
+		TDM_ERR("primary layer count(%d) should be one", primary_cnt);
+		goto failed;
+	}
+
+	opos_next = 1;
+	cpos_next = ovl_cnt;
+	for (i = 0; i < plane_cnt; i++) {
+		tdm_drm_layer_data *layer_data;
 
 		layer_data = calloc(1, sizeof(tdm_drm_layer_data));
 		if (!layer_data) {
 			TDM_ERR("alloc failed");
-			drmModeFreePlane(plane);
-			continue;
-		}
-
-		LIST_FOR_EACH_ENTRY(output_data, &drm_data->output_list, link) {
-			if (plane->possible_crtcs & (1 << output_data->pipe))
-				break;
-		}
-
-		if (!output_data) {
-			TDM_ERR("plane(%d) couldn't found proper output", plane->plane_id);
-			drmModeFreePlane(plane);
-			free(layer_data);
-			continue;
+			goto failed;
 		}
 
 		layer_data->drm_data = drm_data;
 		layer_data->output_data = output_data;
-		layer_data->plane_id = drm_data->plane_res->planes[i];
+		layer_data->plane_id = planes[i]->plane_id;
 
-		if (type == DRM_PLANE_TYPE_CURSOR) {
+		if (types[i] == DRM_PLANE_TYPE_CURSOR) {
 			layer_data->capabilities = TDM_LAYER_CAPABILITY_CURSOR |
 			                           TDM_LAYER_CAPABILITY_GRAPHIC;
-			layer_data->zpos = 2;
-		} else if (type == DRM_PLANE_TYPE_OVERLAY) {
+			layer_data->zpos = cpos_next++;
+		} else if (types[i] == DRM_PLANE_TYPE_OVERLAY) {
 			layer_data->capabilities = TDM_LAYER_CAPABILITY_OVERLAY |
 			                           TDM_LAYER_CAPABILITY_GRAPHIC;
-			layer_data->zpos = 1;
-		} else if (type == DRM_PLANE_TYPE_PRIMARY) {
+			layer_data->zpos = opos_next++;
+		} else if (types[i] == DRM_PLANE_TYPE_PRIMARY) {
 			layer_data->capabilities = TDM_LAYER_CAPABILITY_PRIMARY |
 			                           TDM_LAYER_CAPABILITY_GRAPHIC;
 			layer_data->zpos = 0;
 			output_data->primary_layer = layer_data;
 		} else {
-			drmModeFreePlane(plane);
 			free(layer_data);
 			continue;
 		}
@@ -569,11 +597,28 @@ _tdm_drm_display_create_layer_list_type(tdm_drm_data *drm_data)
 		         layer_data->zpos, layer_data->capabilities);
 
 		LIST_ADDTAIL(&layer_data->link, &output_data->layer_list);
-
-		drmModeFreePlane(plane);
 	}
 
+	for (i = 0; i < plane_cnt; i++)
+		if (planes[i])
+			drmModeFreePlane(planes[i]);
+
+	free(planes);
+	free(types);
+
 	return TDM_ERROR_NONE;
+
+failed:
+	if (planes) {
+		for (i = 0; i < drm_data->plane_res->count_planes; i++)
+			if (planes[i])
+				drmModeFreePlane(planes[i]);
+		free(planes);
+	}
+
+	free(types);
+
+	return TDM_ERROR_OPERATION_FAILED;
 }
 #endif
 
