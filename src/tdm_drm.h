@@ -1,6 +1,10 @@
 #ifndef _TDM_DRM_H_
 #define _TDM_DRM_H_
 
+#ifdef HAVE_CONFIG_H
+#include "config.h"
+#endif
+
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
@@ -102,7 +106,9 @@ typedef struct _tdm_drm_data
 
     int drm_fd;
 
+#if LIBDRM_MAJOR_VERSION >= 2 && LIBDRM_MINOR_VERSION >= 4  && LIBDRM_MICRO_VERSION >= 47
     int has_universal_plane;
+#endif
 
 #if HAVE_UDEV
     struct udev_monitor *uevent_monitor;

@@ -185,43 +185,6 @@ _tdm_drm_display_wait_vblank(int fd, int pipe, uint *target_msc, void *data)
 }
 
 static tdm_error
-_tdm_drm_display_get_property(tdm_drm_data *drm_data,
-                              unsigned int obj_id, unsigned int obj_type,
-                              const char *name, unsigned int *value,
-                              int *is_immutable)
-{
-	drmModeObjectPropertiesPtr props = NULL;
-	int i;
-
-	props = drmModeObjectGetProperties(drm_data->drm_fd, obj_id, obj_type);
-	if (!props)
-		return TDM_ERROR_OPERATION_FAILED;
-
-	for (i = 0; i < props->count_props; i++) {
-		drmModePropertyPtr prop = drmModeGetProperty(drm_data->drm_fd,
-		                          props->props[i]);
-
-		if (!prop)
-			continue;
-
-		if (!strcmp(prop->name, name)) {
-			if (is_immutable)
-				*is_immutable = prop->flags & DRM_MODE_PROP_IMMUTABLE;
-			if (value)
-				*value = (unsigned int)props->prop_values[i];
-			drmModeFreeProperty(prop);
-			drmModeFreeObjectProperties(props);
-			return TDM_ERROR_NONE;
-		}
-
-		drmModeFreeProperty(prop);
-	}
-	drmModeFreeObjectProperties(props);
-	TDM_DBG("coundn't find '%s' property", name);
-	return TDM_ERROR_OPERATION_FAILED;
-}
-
-static tdm_error
 _tdm_drm_display_commit_primary_layer(tdm_drm_layer_data *layer_data,
                                       void *user_data, int *do_waitvblank)
 {
@@ -439,9 +402,9 @@ _tdm_drm_display_create_layer_list(tdm_drm_data *drm_data)
 		                           TDM_LAYER_CAPABILITY_GRAPHIC;
 		output_data->primary_layer = layer_data;
 
-		TDM_DBG("layer_data(%p) plane_id(%d) crtc_id(%d) capabilities(%x)",
-		        layer_data, layer_data->plane_id, layer_data->output_data->crtc_id,
-		        layer_data->capabilities);
+		TDM_INFO("layer_data(%p) plane_id(%d) crtc_id(%d) capabilities(%x)",
+		         layer_data, layer_data->plane_id, layer_data->output_data->crtc_id,
+		         layer_data->capabilities);
 
 		LIST_ADDTAIL(&layer_data->link, &output_data->layer_list);
 
@@ -452,6 +415,45 @@ _tdm_drm_display_create_layer_list(tdm_drm_data *drm_data)
 	}
 
 	return TDM_ERROR_NONE;
+}
+
+#if LIBDRM_MAJOR_VERSION >= 2 && LIBDRM_MINOR_VERSION >= 4  && LIBDRM_MICRO_VERSION >= 47
+
+static tdm_error
+_tdm_drm_display_get_property(tdm_drm_data *drm_data,
+                              unsigned int obj_id, unsigned int obj_type,
+                              const char *name, unsigned int *value,
+                              int *is_immutable)
+{
+	drmModeObjectPropertiesPtr props = NULL;
+	int i;
+
+	props = drmModeObjectGetProperties(drm_data->drm_fd, obj_id, obj_type);
+	if (!props)
+		return TDM_ERROR_OPERATION_FAILED;
+
+	for (i = 0; i < props->count_props; i++) {
+		drmModePropertyPtr prop = drmModeGetProperty(drm_data->drm_fd,
+		                          props->props[i]);
+
+		if (!prop)
+			continue;
+
+		if (!strcmp(prop->name, name)) {
+			if (is_immutable)
+				*is_immutable = prop->flags & DRM_MODE_PROP_IMMUTABLE;
+			if (value)
+				*value = (unsigned int)props->prop_values[i];
+			drmModeFreeProperty(prop);
+			drmModeFreeObjectProperties(props);
+			return TDM_ERROR_NONE;
+		}
+
+		drmModeFreeProperty(prop);
+	}
+	drmModeFreeObjectProperties(props);
+	TDM_DBG("coundn't find '%s' property", name);
+	return TDM_ERROR_OPERATION_FAILED;
 }
 
 static tdm_error
@@ -554,9 +556,9 @@ _tdm_drm_display_create_layer_list_type(tdm_drm_data *drm_data)
 			continue;
 		}
 
-		TDM_DBG("layer_data(%p) plane_id(%d) crtc_id(%d) zpos(%d) capabilities(%x)",
-		        layer_data, layer_data->plane_id, layer_data->output_data->crtc_id,
-		        layer_data->zpos, layer_data->capabilities);
+		TDM_INFO("layer_data(%p) plane_id(%d) crtc_id(%d) zpos(%d) capabilities(%x)",
+		         layer_data, layer_data->plane_id, layer_data->output_data->crtc_id,
+		         layer_data->zpos, layer_data->capabilities);
 
 		LIST_ADDTAIL(&layer_data->link, &output_data->layer_list);
 
@@ -565,6 +567,7 @@ _tdm_drm_display_create_layer_list_type(tdm_drm_data *drm_data)
 
 	return TDM_ERROR_NONE;
 }
+#endif
 
 static void
 _tdm_drm_display_cb_destroy_buffer(tbm_surface_h buffer, void *user_data)
@@ -610,10 +613,12 @@ tdm_drm_display_create_layer_list(tdm_drm_data *drm_data)
 	tdm_drm_output_data *output_data = NULL;
 	tdm_error ret;
 
-	if (!drm_data->has_universal_plane)
-		ret = _tdm_drm_display_create_layer_list(drm_data);
-	else
+#if LIBDRM_MAJOR_VERSION >= 2 && LIBDRM_MINOR_VERSION >= 4  && LIBDRM_MICRO_VERSION >= 47
+	if (drm_data->has_universal_plane)
 		ret = _tdm_drm_display_create_layer_list_type(drm_data);
+	else
+#endif
+		ret = _tdm_drm_display_create_layer_list(drm_data);
 
 	if (ret != TDM_ERROR_NONE)
 		return ret;
