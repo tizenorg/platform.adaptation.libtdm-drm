@@ -1452,7 +1452,7 @@ drm_layer_get_capability(tdm_layer *layer, tdm_caps_layer *caps)
 	tdm_drm_data *drm_data;
 	drmModePlanePtr plane = NULL;
 	drmModeObjectPropertiesPtr props = NULL;
-	int i;
+	int i, format_count = 0;
 	tdm_error ret;
 
 	RETURN_VAL_IF_FAIL(layer_data, TDM_ERROR_INVALID_PARAMETER);
@@ -1485,7 +1485,10 @@ drm_layer_get_capability(tdm_layer *layer, tdm_caps_layer *caps)
 		    plane->formats[i] != DRM_FORMAT_ARGB8888)
 			continue;
 		caps->formats[i] = tdm_drm_format_to_tbm_format(plane->formats[i]);
+		format_count++;
 	}
+
+	caps->format_count = format_count;
 
 	props = drmModeObjectGetProperties(drm_data->drm_fd, layer_data->plane_id,
 	                                   DRM_MODE_OBJECT_PLANE);
