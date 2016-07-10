@@ -397,10 +397,15 @@ _tdm_drm_display_create_layer_list(tdm_drm_data *drm_data)
 		layer_data->drm_data = drm_data;
 		layer_data->output_data = output_data;
 		layer_data->plane_id = drm_data->plane_res->planes[i];
-
-		layer_data->capabilities = TDM_LAYER_CAPABILITY_PRIMARY |
-		                           TDM_LAYER_CAPABILITY_GRAPHIC;
-		output_data->primary_layer = layer_data;
+		layer_data->zpos = i;
+		if (i == 0) {
+			layer_data->capabilities = TDM_LAYER_CAPABILITY_PRIMARY |
+			                           TDM_LAYER_CAPABILITY_GRAPHIC;
+			output_data->primary_layer = layer_data;
+		} else {
+			layer_data->capabilities = TDM_LAYER_CAPABILITY_OVERLAY |
+			                           TDM_LAYER_CAPABILITY_GRAPHIC;
+		}
 
 		TDM_INFO("layer_data(%p) plane_id(%d) crtc_id(%d) capabilities(%x)",
 		         layer_data, layer_data->plane_id, layer_data->output_data->crtc_id,
@@ -409,9 +414,6 @@ _tdm_drm_display_create_layer_list(tdm_drm_data *drm_data)
 		LIST_ADDTAIL(&layer_data->link, &output_data->layer_list);
 
 		drmModeFreePlane(plane);
-
-		/* can't take care of other planes for various hardware devices */
-		break;
 	}
 
 	return TDM_ERROR_NONE;
