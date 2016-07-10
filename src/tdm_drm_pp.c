@@ -244,7 +244,7 @@ tdm_drm_pp_get_capability(tdm_drm_data *drm_data, tdm_caps_pp *caps)
 		return TDM_ERROR_INVALID_PARAMETER;
 	}
 
-	caps->capabilities = TDM_PP_CAPABILITY_ASYNC;
+	caps->capabilities = TDM_PP_CAPABILITY_SYNC;
 
 	caps->format_count = NUM_PP_FORMAT;
 
